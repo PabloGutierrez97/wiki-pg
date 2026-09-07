@@ -1,0 +1,28 @@
+{% extends 'wiki/base.html' %}
+
+{% block title %}#{{ tag }} - Wiki PG{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="/">Inicio</a> &rsaquo;
+    <span>#{{ tag }}</span>
+</div>
+
+<div class="page-title"><i class="fa-solid fa-tag" style="color: var(--accent);"></i> #{{ tag }}</div>
+<p class="page-subtitle">{{ articles.count }} artículo(s) con esta etiqueta</p>
+
+{% for article in articles %}
+<div class="card">
+    <h3><a href="{% url 'wiki:article_detail' article.slug %}">{{ article.title }}</a></h3>
+    <div class="card-meta">
+        <span class="badge">{{ article.category.name }}</span>
+        &nbsp;{{ article.created_at|date:"d/m/Y" }}
+    </div>
+    <p class="card-summary">{{ article.summary }}...</p>
+</div>
+{% empty %}
+<p style="color: var(--text-muted);">No hay artículos con esta etiqueta.</p>
+{% endfor %}
+
+<a href="/" class="btn-back"><i class="fa-solid fa-arrow-left"></i> Volver al inicio</a>
+{% endblock %}

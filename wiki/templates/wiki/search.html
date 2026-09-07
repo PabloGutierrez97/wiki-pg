@@ -1,0 +1,40 @@
+{% extends 'wiki/base.html' %}
+
+{% block title %}Buscar - Wiki PG{% endblock %}
+
+{% block content %}
+<div class="page-title">Buscar</div>
+
+<form method="get" action="{% url 'wiki:search' %}" style="margin-bottom: 2rem;">
+    <div style="display: flex; gap: 0.5rem;">
+        <input type="text" name="q" value="{{ query }}" placeholder="Buscar articulos..."
+            class="search-input" style="flex: 1; width: auto;">
+        <button type="submit" class="search-btn">Buscar</button>
+    </div>
+</form>
+
+{% if query %}
+<p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1.5rem;">
+    {% if results %}
+        {{ results.count }} resultado(s) para "{{ query }}"
+    {% else %}
+        No se encontraron resultados para "{{ query }}"
+    {% endif %}
+</p>
+
+{% for article in results %}
+<div class="card">
+    <h3><a href="{% url 'wiki:article_detail' article.slug %}">{{ article.title }}</a></h3>
+    <div class="card-meta">
+        <span class="badge">{{ article.category.name }}</span>
+        &nbsp;{{ article.created_at|date:"d/m/Y" }}
+    </div>
+    <p class="card-summary">{{ article.summary }}...</p>
+</div>
+{% endfor %}
+{% endif %}
+
+<a href="/" class="btn-back">
+    <i class="fa-solid fa-arrow-left"></i> Volver al inicio
+</a>
+{% endblock %}

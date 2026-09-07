@@ -1,0 +1,41 @@
+{% extends 'wiki/base.html' %}
+
+{% block title %}{{ category.name }} - Wiki PG{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="/">Inicio</a> &rsaquo;
+    {% if category.parent %}
+    <a href="{% url 'wiki:category_detail' category.parent.slug %}">{{ category.parent.name }}</a> &rsaquo;
+    {% endif %}
+    <span>{{ category.name }}</span>
+</div>
+
+<div class="page-title"><i class="{{ category.icon|default:'fa-solid fa-folder' }}"></i> {{ category.name }}</div>
+<p class="page-subtitle">{{ category.description }}</p>
+
+{% if category.subcategories.all %}
+<div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 2rem;">
+    {% for sub in category.subcategories.all %}
+    <a href="{% url 'wiki:category_detail' sub.slug %}"
+        style="display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.35rem 0.85rem; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 20px; font-size: 0.85rem; color: var(--text-secondary); text-decoration: none;">
+        📄 {{ sub.name }}
+    </a>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% for article in articles %}
+<div class="card">
+    <h3><a href="{% url 'wiki:article_detail' article.slug %}">{{ article.title }}</a></h3>
+    <div class="card-meta">{{ article.created_at|date:"d/m/Y" }} &middot; {{ article.author }}</div>
+    <p class="card-summary">{{ article.summary }}...</p>
+</div>
+{% empty %}
+<p style="color: var(--text-muted);">No hay articulos en esta categoria todavia.</p>
+{% endfor %}
+
+<a href="/" class="btn-back">
+    <i class="fa-solid fa-arrow-left"></i> Volver al inicio
+</a>
+{% endblock %}

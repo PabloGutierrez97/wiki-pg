@@ -1,0 +1,49 @@
+{% extends "admin/base.html" %}
+{% load static %}
+
+{% block title %}{{ title }} | Wiki Editor{% endblock %}
+
+{% block branding %}
+<h1 id="site-name">
+    <a href="{% url 'admin:index' %}" style="display:flex;align-items:center;gap:0.6rem;text-decoration:none;">
+        <span style="background:#0284c7;color:white;padding:0.25rem 0.6rem;border-radius:6px;font-size:0.8rem;font-weight:700;">PG</span>
+        <span style="color:white;font-size:1rem;font-weight:600;">Wiki Editor</span>
+    </a>
+</h1>
+{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'admin/css/custom_admin.css' %}">
+<link rel="icon" type="image/x-icon" href="/media/favicon/favicon.ico">
+<script>
+    // Aplicar tema guardado antes de que cargue la página
+    const theme = localStorage.getItem('admin_theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', theme);
+</script>
+{% endblock %}
+
+{% block usertools %}
+{{ block.super }}
+{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+<script>
+function toggleAdminTheme() {
+    const html = document.documentElement;
+    const current = html.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-theme', next);
+    localStorage.setItem('admin_theme', next);
+    document.getElementById('theme-btn').textContent = next === 'dark' ? '🌙' : '☀️';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const theme = localStorage.getItem('admin_theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', theme);
+    const btn = document.getElementById('theme-btn');
+    if (btn) btn.textContent = theme === 'dark' ? '🌙' : '☀️';
+});
+</script>
+{% endblock %}

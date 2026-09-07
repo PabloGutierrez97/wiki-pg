@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>500 - Error del servidor - Wiki PG</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root[data-theme="light"] {
+            --bg: #f7f6f3;
+            --text: #37352f;
+            --text-muted: #9ca3af;
+            --accent: #dc2626;
+            --border: #e5e7eb;
+            --card: #ffffff;
+        }
+        :root[data-theme="dark"] {
+            --bg: #191919;
+            --text: #e5e5e5;
+            --text-muted: #6b7280;
+            --accent: #ef4444;
+            --border: #2e2e2e;
+            --card: #222222;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            text-align: center;
+            padding: 2rem;
+        }
+        .code {
+            font-size: 8rem;
+            font-weight: 700;
+            color: var(--accent);
+            line-height: 1;
+            margin-bottom: 1rem;
+        }
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+        }
+        p {
+            color: var(--text-muted);
+            margin-bottom: 2rem;
+            font-size: 0.95rem;
+        }
+        .btn {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            background: var(--accent);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 0.95rem;
+        }
+    </style>
+    <script>
+        const theme = localStorage.getItem('theme') || 'light';
+        document.documentElement.setAttribute('data-theme', theme);
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div class="code">500</div>
+        <h1>Error interno del servidor</h1>
+        <p>Algo ha salido mal. Estamos trabajando para solucionarlo.</p>
+        <a href="/" class="btn">&larr; Volver al inicio</a>
+    </div>
+</body>
+</html>

@@ -1,0 +1,30 @@
+# Secretos y configuración local
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+wiki-env/
+venv/
+env/
+
+# Django
+*.log
+db.sqlite3
+db.sqlite3-journal
+/staticfiles/
+/media/
+
+# Migraciones (opcional, las dejamos fuera por si acaso contienen datos)
+# wiki/migrations/*.py
+# !wiki/migrations/__init__.py
+
+# Editor / Sistema
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store

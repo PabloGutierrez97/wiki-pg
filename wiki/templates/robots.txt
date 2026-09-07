@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /mdeditor/
+
+Sitemap: https://wiki.pablogg.dev/sitemap.xml

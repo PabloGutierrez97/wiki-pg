@@ -1,0 +1,147 @@
+:root, [data-theme="dark"] {
+    --primary: #0284c7;
+    --bg-dark: #0b0f19;
+    --bg-card: #151b2c;
+    --bg-sidebar: #0f1629;
+    --border: #1e293b;
+    --text: #cbd5e1;
+    --text-muted: #64748b;
+    --accent: #38bdf8;
+}
+
+[data-theme="light"] {
+    --primary: #0284c7;
+    --bg-dark: #f8fafc;
+    --bg-card: #ffffff;
+    --bg-sidebar: #f1f5f9;
+    --border: #e2e8f0;
+    --text: #334155;
+    --text-muted: #64748b;
+    --accent: #0284c7;
+}
+
+/* BASE */
+body { background: var(--bg-dark) !important; color: var(--text) !important; }
+
+/* HEADER */
+#header {
+    background: var(--bg-card) !important;
+    border-bottom: 1px solid var(--border) !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.4) !important;
+}
+#branding h1 a:link, #branding h1 a:visited { color: white !important; }
+#user-tools a { color: var(--accent) !important; }
+
+/* BREADCRUMBS */
+div.breadcrumbs {
+    background: var(--bg-card) !important;
+    border-bottom: 1px solid var(--border) !important;
+    color: var(--text-muted) !important;
+}
+div.breadcrumbs a { color: var(--accent) !important; }
+
+/* SIDEBAR */
+#nav-sidebar { background: var(--bg-sidebar) !important; border-right: 1px solid var(--border) !important; }
+.sidebar-sticky { background: var(--bg-sidebar) !important; }
+#nav-sidebar a { color: var(--text) !important; }
+#nav-sidebar a:hover { color: var(--accent) !important; }
+#nav-sidebar .module th {
+    background: var(--bg-sidebar) !important;
+    color: var(--text-muted) !important;
+    font-size: 0.7rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.08em !important;
+}
+
+/* CONTENT */
+#content { background: var(--bg-dark) !important; }
+#content h1 { color: var(--text) !important; border-bottom: 1px solid var(--border) !important; padding-bottom: 0.5rem !important; }
+
+/* MODULES */
+.module { background: var(--bg-card) !important; border: 1px solid var(--border) !important; border-radius: 8px !important; overflow: hidden !important; }
+.module h2, .module caption { background: var(--bg-card) !important; color: var(--text-muted) !important; border-bottom: 1px solid var(--border) !important; font-size: 0.75rem !important; text-transform: uppercase !important; letter-spacing: 0.06em !important; }
+
+/* TABLES */
+#result_list thead th { background: var(--bg-card) !important; color: var(--text-muted) !important; border-bottom: 1px solid var(--border) !important; font-size: 0.75rem !important; text-transform: uppercase !important; }
+#result_list tbody tr { background: var(--bg-dark) !important; border-bottom: 1px solid var(--border) !important; }
+#result_list tbody tr:hover { background: var(--bg-card) !important; }
+#result_list tbody td { color: var(--text) !important; }
+#result_list tbody a { color: var(--accent) !important; }
+
+/* SUBMIT ROW */
+.submit-row { background: var(--bg-card) !important; border: 1px solid var(--border) !important; border-radius: 8px !important; padding: 1rem !important; }
+.submit-row input[type="submit"] { background: var(--primary) !important; border: none !important; border-radius: 6px !important; color: white !important; padding: 0.5rem 1.25rem !important; font-weight: 500 !important; cursor: pointer !important; }
+.deletelink { background: #dc2626 !important; border-radius: 6px !important; padding: 0.5rem 1.25rem !important; color: white !important; }
+
+/* FILTERS */
+#changelist-filter { background: var(--bg-card) !important; border: 1px solid var(--border) !important; border-radius: 8px !important; }
+#changelist-filter h2 { background: var(--bg-card) !important; color: var(--text-muted) !important; border-bottom: 1px solid var(--border) !important; font-size: 0.7rem !important; text-transform: uppercase !important; }
+#changelist-filter a { color: var(--text) !important; }
+#changelist-filter a:hover { color: var(--accent) !important; }
+#changelist-filter li.selected a { color: var(--accent) !important; font-weight: 600 !important; }
+
+/* PAGINATOR */
+.paginator { background: var(--bg-card) !important; border-top: 1px solid var(--border) !important; color: var(--text-muted) !important; }
+.paginator a { color: var(--accent) !important; }
+
+/* MESSAGES */
+ul.messagelist li { border-radius: 6px !important; }
+ul.messagelist li.success { background: #064e3b !important; color: #6ee7b7 !important; border: none !important; }
+ul.messagelist li.error { background: #7f1d1d !important; color: #fca5a5 !important; border: none !important; }
+
+/* RELATED */
+#content-related { background: var(--bg-sidebar) !important; border-left: 1px solid var(--border) !important; }
+#recent-actions-module a { color: var(--accent) !important; }
+
+/* FIELDSETS */
+fieldset { border: 1px solid var(--border) !important; border-radius: 8px !important; background: var(--bg-card) !important; }
+fieldset h2 { color: var(--accent) !important; font-size: 0.75rem !important; border-bottom: 1px solid var(--border) !important; }
+
+/* CHECKBOX */
+input[type="checkbox"] { accent-color: var(--primary) !important; }
+
+/* SELECTORES */
+select {
+    background: #0b0f19 !important;
+    border: 1px solid #1e293b !important;
+    color: #cbd5e1 !important;
+    border-radius: 6px !important;
+    padding: 0.4rem 0.6rem !important;
+    min-width: 200px !important;
+}
+
+/* INPUTS TEXTO */
+input[type="text"], input[type="password"], input[type="email"], input[type="number"], input[type="url"] {
+    background: #0b0f19 !important;
+    border: 1px solid #1e293b !important;
+    color: #cbd5e1 !important;
+    border-radius: 6px !important;
+    padding: 0.4rem 0.6rem !important;
+}
+
+
+
+/* MODO CLARO */
+[data-theme="light"] body { background: #f8fafc !important; color: #334155 !important; }
+[data-theme="light"] #header { background: #ffffff !important; border-bottom: 1px solid #e2e8f0 !important; }
+[data-theme="light"] #branding h1 a { color: #334155 !important; }
+[data-theme="light"] #user-tools a { color: #0284c7 !important; }
+[data-theme="light"] div.breadcrumbs { background: #ffffff !important; border-bottom: 1px solid #e2e8f0 !important; color: #64748b !important; }
+[data-theme="light"] #nav-sidebar { background: #ffffff !important; border-right: 1px solid #e2e8f0 !important; }
+[data-theme="light"] .sidebar-sticky { background: #ffffff !important; }
+[data-theme="light"] #nav-sidebar a { color: #475569 !important; }
+[data-theme="light"] #nav-sidebar .module th { color: #94a3b8 !important; }
+[data-theme="light"] #content { background: #f8fafc !important; }
+[data-theme="light"] .module { background: #ffffff !important; border: 1px solid #e2e8f0 !important; }
+[data-theme="light"] .module h2, [data-theme="light"] .module caption { background: #ffffff !important; color: #64748b !important; border-bottom: 1px solid #e2e8f0 !important; }
+[data-theme="light"] #result_list thead th { background: #ffffff !important; color: #64748b !important; border-bottom: 1px solid #e2e8f0 !important; }
+[data-theme="light"] #result_list tbody tr { background: #f8fafc !important; border-bottom: 1px solid #e2e8f0 !important; }
+[data-theme="light"] #result_list tbody tr:hover { background: #ffffff !important; }
+[data-theme="light"] #result_list tbody td { color: #334155 !important; }
+[data-theme="light"] .submit-row { background: #ffffff !important; border: 1px solid #e2e8f0 !important; }
+[data-theme="light"] select { background: #ffffff !important; border: 1px solid #e2e8f0 !important; color: #334155 !important; }
+[data-theme="light"] input[type="text"], [data-theme="light"] input[type="password"], [data-theme="light"] input[type="email"], [data-theme="light"] input[type="number"], [data-theme="light"] input[type="url"] { background: #ffffff !important; border: 1px solid #e2e8f0 !important; color: #334155 !important; }
+[data-theme="light"] fieldset { background: #ffffff !important; border: 1px solid #e2e8f0 !important; }
+[data-theme="light"] #changelist-filter { background: #ffffff !important; border: 1px solid #e2e8f0 !important; }
+[data-theme="light"] #content-related { background: #f8fafc !important; border-left: 1px solid #e2e8f0 !important; }
+[data-theme="light"] #content h1 { color: #334155 !important; border-bottom: 1px solid #e2e8f0 !important; }

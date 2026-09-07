@@ -1,0 +1,96 @@
+{% extends 'wiki/base.html' %}
+
+{% block title %}Inicio - Wiki PG{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--border);">
+    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
+        <div style="width: 4px; height: 2rem; background: var(--accent); border-radius: 4px;"></div>
+        <h1 style="font-size: clamp(1.4rem, 3vw, 1.8rem); font-weight: 700; color: var(--text-primary);">Wiki PG</h1>
+    </div>
+    <p style="color: var(--text-secondary); font-size: 0.95rem; padding-left: 1rem; border-left: 1px solid var(--border);">
+        <i class="fa-solid fa-terminal" style="color: var(--accent); margin-right: 0.5rem;"></i>
+        Documentación técnica · Administración de sistemas · Linux · Redes · Windows
+    </p>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+
+    <!-- Stats -->
+    <div style="background: var(--bg-primary); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; box-shadow: var(--shadow);">
+        <div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 1rem;">
+            <i class="fa-solid fa-chart-bar" style="margin-right: 0.4rem;"></i> Estadísticas
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; text-align: center;">
+            <div>
+                <div style="font-size: 2rem; font-weight: 700; color: var(--accent);">{{ total_articles }}</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">Artículos</div>
+            </div>
+            <div>
+                <div style="font-size: 2rem; font-weight: 700; color: var(--accent);">{{ total_categories }}</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">Categorías</div>
+            </div>
+            <div>
+                <div style="font-size: 2rem; font-weight: 700; color: var(--accent);">{{ recent_articles|length }}</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">Recientes</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Último artículo modificado -->
+    <div style="background: var(--bg-primary); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; box-shadow: var(--shadow);">
+        <div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 1rem;">
+            <i class="fa-solid fa-clock-rotate-left" style="margin-right: 0.4rem;"></i> Última actualización
+        </div>
+        {% if last_updated %}
+        <a href="{% url 'wiki:article_detail' last_updated.slug %}" style="text-decoration: none;">
+            <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 0.5rem; font-size: 1rem;">{{ last_updated.title }}</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+                <i class="fa-solid fa-folder" style="margin-right: 0.3rem;"></i> {{ last_updated.category.name }}
+            </div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">
+                <i class="fa-regular fa-calendar" style="margin-right: 0.3rem;"></i> {{ last_updated.updated_at|date:"d/m/Y H:i" }}
+            </div>
+        </a>
+        {% else %}
+        <p style="color: var(--text-muted); font-size: 0.875rem;">No hay artículos todavía.</p>
+        {% endif %}
+    </div>
+
+</div>
+
+<h2 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem; color: var(--text-secondary);">Categorias principales</h2>
+
+{% for category in categories %}
+<div class="card">
+    <h3><a href="{% url 'wiki:category_detail' category.slug %}"><i class="{{ category.icon|default:'fa-solid fa-folder' }}"></i> {{ category.name }}</a></h3>
+    <p class="card-meta">{{ category.description }}</p>
+    {% if category.subcategories.all %}
+    <div style="margin-top: 0.75rem; display: flex; flex-wrap: wrap; gap: 0.5rem;">
+        {% for sub in category.subcategories.all %}
+        <a href="{% url 'wiki:category_detail' sub.slug %}"
+            style="display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.25rem 0.75rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 20px; font-size: 0.8rem; color: var(--text-secondary); text-decoration: none; transition: border 0.2s;">
+            📄 {{ sub.name }}
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% empty %}
+<p style="color: var(--text-muted);">No hay categorias todavia.</p>
+{% endfor %}
+
+{% if recent_articles %}
+<h2 style="font-size: 1.1rem; font-weight: 600; margin: 2rem 0 1rem; color: var(--text-secondary);">Articulos recientes</h2>
+{% for article in recent_articles %}
+<div class="card">
+    <h3><a href="{% url 'wiki:article_detail' article.slug %}">{{ article.title }}</a></h3>
+    <div class="card-meta">
+        <span class="badge">{{ article.category.name }}</span>
+        &nbsp;{{ article.created_at|date:"d/m/Y" }}
+    </div>
+</div>
+{% endfor %}
+{% endif %}
+
+{% endblock %}

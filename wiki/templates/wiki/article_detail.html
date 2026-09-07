@@ -1,0 +1,101 @@
+{% extends 'wiki/base.html' %}
+{% block description %}{{ article.title }} - {{ article.category.name }} - Wiki PG{% endblock %}
+{% block og_title %}{{ article.title }} - Wiki PG{% endblock %}
+{% block og_description %}{{ article.title }} - {{ article.category.name }}{% endblock %}
+{% block canonical %}/article/{{ article.slug }}/{% endblock %}
+{% block title %}{{ article.title }} - Wiki PG{% endblock %}
+{% if featured_image_url %}
+{% block og_image %}<meta property="og:image" content="https://wiki.pablogg.dev{{ featured_image_url }}">{% endblock %}
+{% endif %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="/">Inicio</a> &rsaquo;
+    <a href="{% url 'wiki:category_detail' article.category.slug %}">{{ article.category.name }}</a> &rsaquo;
+    <span>{{ article.title }}</span>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 220px; gap: 2rem; align-items: start;" class="article-layout">
+
+    <div style="min-width: 0; overflow-x: hidden;">
+        <div class="article-header">
+            <h1>{{ article.title }}</h1>
+	    <div style="display: flex; align-items: center; gap: 0.75rem; margin-top: 0.75rem; flex-wrap: wrap;">
+    <span class="badge">{{ article.category.name }}</span>
+    <span style="color: var(--text-muted); font-size: 0.8rem;"><i class="fa-solid fa-user" style="margin-right: 0.3rem;"></i>{{ article.author }}</span>
+    <span style="color: var(--text-muted); font-size: 0.8rem;"><i class="fa-regular fa-calendar" style="margin-right: 0.3rem;"></i>{{ article.created_at|date:"d/m/Y H:i" }}</span>
+    <span style="color: var(--text-muted); font-size: 0.8rem;"><i class="fa-regular fa-clock" style="margin-right: 0.3rem;"></i>{{ reading_time }} min de lectura</span>
+    {% if article.updated_at != article.created_at %}
+    <span style="color: var(--text-muted); font-size: 0.8rem;"><i class="fa-solid fa-pen" style="margin-right: 0.3rem;"></i>Actualizado: {{ article.updated_at|date:"d/m/Y H:i" }}</span>
+    {% endif %}
+</div>
+        </div>
+
+        <div class="article-content">
+            {{ content_html|safe }}
+        </div>
+
+        {% if tags %}
+<div style="margin-top: 1.5rem; display: flex; flex-wrap: wrap; gap: 0.5rem;">
+    {% for tag in tags %}
+    <a href="{% url 'wiki:tag_detail' tag %}" style="display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.3rem 0.85rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 20px; font-size: 0.8rem; color: var(--text-secondary); text-decoration: none;">
+        <i class="fa-solid fa-tag" style="font-size: 0.7rem;"></i> {{ tag }}
+    </a>
+    {% endfor %}
+</div>
+{% endif %}	
+
+        <a href="{% url 'wiki:category_detail' article.category.slug %}" class="btn-back">
+    <i class="fa-solid fa-arrow-left"></i> Volver a {{ article.category.name }}
+</a>
+    </div>
+
+    {% if toc %}
+    <div style="position: sticky; top: 72px;">
+        <div style="background: var(--bg-primary); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem;">
+            <div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 0.75rem;">
+                En esta pagina
+            </div>
+            <div class="toc-content">
+                {{ toc|safe }}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+
+<style>
+    .toc-content ul { list-style: none; padding: 0; margin: 0; }
+    .toc-content li { margin-bottom: 0.3rem; }
+    .toc-content a {
+        color: var(--text-secondary);
+        text-decoration: none;
+        font-size: 0.8rem;
+        line-height: 1.5;
+        display: block;
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+        transition: background 0.15s, color 0.15s;
+    }
+    .toc-content a:hover {
+        background: var(--bg-secondary);
+        color: var(--accent);
+    }
+    .toc-content ul ul { padding-left: 1rem; }
+
+    @media (max-width: 768px) {
+        .article-layout {
+            grid-template-columns: 1fr !important;
+        }
+        .article-layout > div:first-child {
+            min-width: 0;
+        }
+        .article-layout > div:last-child {
+            position: static !important;
+            margin-top: 1.5rem;
+        }
+    }
+
+</style>
+{% endblock %}

@@ -1,0 +1,284 @@
+{% extends 'wiki/base.html' %}
+{% load wiki_tags %}
+
+{% block title %}Sobre mí - Wiki PG
+<canvas id="matrix-rain" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:#000;"></canvas>
+<script>
+(function() {
+    const seq = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a'];
+    let pos = 0;
+    let active = false;
+    let animId = null;
+
+    document.addEventListener('keydown', function(e) {
+        if (active) { stopMatrix(); return; }
+        const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+        if (key === seq[pos]) {
+            pos++;
+            if (pos === seq.length) { pos = 0; startMatrix(); }
+        } else {
+            pos = (key === seq[0]) ? 1 : 0;
+        }
+    });
+
+    function startMatrix() {
+        const canvas = document.getElementById('matrix-rain');
+        canvas.style.display = 'block';
+        canvas.addEventListener('click', stopMatrix);
+        active = true;
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        const chars = 'アカサタナハマヤラワ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        const fontSize = 16;
+        const columns = Math.floor(canvas.width / fontSize);
+        const drops = new Array(columns).fill(1);
+
+        function draw() {
+            ctx.fillStyle = 'rgba(0,0,0,0.05)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#28c840';
+            ctx.font = fontSize + 'px monospace';
+            for (let i = 0; i < drops.length; i++) {
+                const text = chars.charAt(Math.floor(Math.random() * chars.length));
+                ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+                if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
+                drops[i]++;
+            }
+            animId = requestAnimationFrame(draw);
+        }
+        draw();
+    }
+
+    function stopMatrix() {
+        const canvas = document.getElementById('matrix-rain');
+        canvas.style.display = 'none';
+        active = false;
+        if (animId) cancelAnimationFrame(animId);
+    }
+})();
+</script>
+
+{% endblock %}
+
+{% block content %}
+<div style="max-width: 860px; font-family: var(--font-mono);">
+
+    <!-- Terminal: Datos personales -->
+    <div style="background: #1e1e1e; border-radius: 16px; overflow: hidden; margin-bottom: 1.5rem; box-shadow: 0 12px 32px rgba(0,0,0,0.35);">
+        <div style="background: #1a1a1a; padding: 0.75rem 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; gap: 6px;">
+                <span style="width:12px;height:12px;background:#ff5f57;border-radius:50%;display:inline-block;"></span>
+                <span style="width:12px;height:12px;background:#febc2e;border-radius:50%;display:inline-block;"></span>
+                <span style="width:12px;height:12px;background:#28c840;border-radius:50%;display:inline-block;"></span>
+            </div>
+            <span style="color: #666; font-size: 0.75rem;">about.sh</span>
+            <span style="width: 60px;"></span>
+        </div>
+        <div style="padding: 1.5rem; color: #d4d4d4; font-size: 0.9rem; line-height: 2;">
+            <div><span style="color: #28c840;">pgg@wiki</span><span style="color: #666;">:</span><span style="color: #4f8ef7;">~</span><span style="color: #666;">$</span> <span style="color: #febc2e;">whoami</span></div>
+            <div style="color: #d4d4d4; padding-left: 1rem; margin-bottom: 0.75rem;">{{ profile.nombre }}</div>
+
+            <div><span style="color: #28c840;">pgg@wiki</span><span style="color: #666;">:</span><span style="color: #4f8ef7;">~</span><span style="color: #666;">$</span> <span style="color: #febc2e;">cat</span> <span style="color: #d4d4d4;">role.txt</span></div>
+            <div style="color: #d4d4d4; padding-left: 1rem; margin-bottom: 0.75rem;">{{ profile.cargo }} — {{ profile.empresa }}</div>
+
+            <div><span style="color: #28c840;">pgg@wiki</span><span style="color: #666;">:</span><span style="color: #4f8ef7;">~</span><span style="color: #666;">$</span> <span style="color: #febc2e;">cat</span> <span style="color: #d4d4d4;">location.txt</span></div>
+            <div style="color: #d4d4d4; padding-left: 1rem; margin-bottom: 0.75rem;">{{ profile.ubicacion }}</div>
+
+            <div><span style="color: #28c840;">pgg@wiki</span><span style="color: #666;">:</span><span style="color: #4f8ef7;">~</span><span style="color: #666;">$</span> <span style="color: #febc2e;">cat</span> <span style="color: #d4d4d4;">contact.txt</span></div>
+            <div style="padding-left: 1rem; margin-bottom: 0.75rem;">
+                <a href="mailto:{{ profile.email }}" style="color: #4f8ef7; text-decoration: none;">{{ profile.email }}</a>
+                {% if profile.linkedin %}
+                <span style="color: #666;"> | </span>
+                <a href="{{ profile.linkedin }}" target="_blank" style="color: #4f8ef7; text-decoration: none;">LinkedIn</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Terminal: Descripción -->
+    {% if profile.descripcion %}
+    <div style="background: #1e1e1e; border-radius: 16px; overflow: hidden; margin-bottom: 1.5rem; box-shadow: 0 12px 32px rgba(0,0,0,0.35);">
+        <div style="background: #1a1a1a; padding: 0.75rem 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; gap: 6px;">
+                <span style="width:12px;height:12px;background:#ff5f57;border-radius:50%;display:inline-block;"></span>
+                <span style="width:12px;height:12px;background:#febc2e;border-radius:50%;display:inline-block;"></span>
+                <span style="width:12px;height:12px;background:#28c840;border-radius:50%;display:inline-block;"></span>
+            </div>
+            <span style="color: #666; font-size: 0.75rem;">profile.txt</span>
+            <span style="width: 60px;"></span>
+        </div>
+        <div style="padding: 1.5rem; color: #d4d4d4; font-size: 0.9rem; line-height: 2;">
+            <div><span style="color: #28c840;">pgg@wiki</span><span style="color: #666;">:</span><span style="color: #4f8ef7;">~</span><span style="color: #666;">$</span> <span style="color: #febc2e;">cat</span> <span style="color: #d4d4d4;">profile.txt</span></div>
+            <div style="color: #d4d4d4; padding-left: 1rem; margin-top: 0.5rem; line-height: 1.8; font-family: var(--font-sans); font-size: 0.875rem; text-align: justify; white-space: pre-line;">{{ profile.descripcion }}</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Terminal: Stack -->
+    {% if stack %}
+    <div style="background: #1e1e1e; border-radius: 16px; overflow: hidden; margin-bottom: 1.5rem; box-shadow: 0 12px 32px rgba(0,0,0,0.35);">
+        <div style="background: #1a1a1a; padding: 0.75rem 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; gap: 6px;">
+                <span style="width:12px;height:12px;background:#ff5f57;border-radius:50%;display:inline-block;"></span>
+                <span style="width:12px;height:12px;background:#febc2e;border-radius:50%;display:inline-block;"></span>
+                <span style="width:12px;height:12px;background:#28c840;border-radius:50%;display:inline-block;"></span>
+            </div>
+            <span style="color: #666; font-size: 0.75rem;">stack.json</span>
+            <span style="width: 60px;"></span>
+        </div>
+        <div style="padding: 1.5rem; color: #d4d4d4; font-size: 0.9rem; line-height: 2;">
+            <div><span style="color: #28c840;">pgg@wiki</span><span style="color: #666;">:</span><span style="color: #4f8ef7;">~</span><span style="color: #666;">$</span> <span style="color: #febc2e;">cat</span> <span style="color: #d4d4d4;">stack.json</span></div>
+            <div style="padding-left: 1rem; margin-top: 0.5rem;">
+                {% for key, value in stack.items %}
+                <div style="margin-bottom: 0.5rem;">
+                    <span style="color: #febc2e;">"{{ key }}"</span><span style="color: #666;">:</span>
+                    <span style="color: #d4d4d4;"> {{ value }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Terminal: Experiencia -->
+    {% if profile.experiencia %}
+    <div style="background: #1e1e1e; border-radius: 16px; overflow: hidden; margin-bottom: 1.5rem; box-shadow: 0 12px 32px rgba(0,0,0,0.35);">
+        <div style="background: #1a1a1a; padding: 0.75rem 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; gap: 6px;">
+                <span style="width:12px;height:12px;background:#ff5f57;border-radius:50%;display:inline-block;"></span>
+                <span style="width:12px;height:12px;background:#febc2e;border-radius:50%;display:inline-block;"></span>
+                <span style="width:12px;height:12px;background:#28c840;border-radius:50%;display:inline-block;"></span>
+            </div>
+            <span style="color: #666; font-size: 0.75rem;">experience.log</span>
+            <span style="width: 60px;"></span>
+        </div>
+        <div style="padding: 1.5rem; color: #d4d4d4; font-size: 0.9rem; line-height: 2;">
+            <div><span style="color: #28c840;">pgg@wiki</span><span style="color: #666;">:</span><span style="color: #4f8ef7;">~</span><span style="color: #666;">$</span> <span style="color: #febc2e;">cat</span> <span style="color: #d4d4d4;">experience.log</span></div>
+            <div style="padding-left: 1rem; margin-top: 0.5rem; color: #d4d4d4; white-space: pre-line; font-family: var(--font-sans); font-size: 0.875rem; line-height: 1.8;">{{ profile.experiencia }}</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Terminal: Formación -->
+    {% if profile.formacion %}
+    <div style="background: #1e1e1e; border-radius: 16px; overflow: hidden; margin-bottom: 1.5rem; box-shadow: 0 12px 32px rgba(0,0,0,0.35);">
+        <div style="background: #1a1a1a; padding: 0.75rem 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; gap: 6px;">
+                <span style="width:12px;height:12px;background:#ff5f57;border-radius:50%;display:inline-block;"></span>
+                <span style="width:12px;height:12px;background:#febc2e;border-radius:50%;display:inline-block;"></span>
+                <span style="width:12px;height:12px;background:#28c840;border-radius:50%;display:inline-block;"></span>
+            </div>
+            <span style="color: #666; font-size: 0.75rem;">education.log</span>
+            <span style="width: 60px;"></span>
+        </div>
+        <div style="padding: 1.5rem; color: #d4d4d4; font-size: 0.9rem; line-height: 2;">
+            <div><span style="color: #28c840;">pgg@wiki</span><span style="color: #666;">:</span><span style="color: #4f8ef7;">~</span><span style="color: #666;">$</span> <span style="color: #febc2e;">ls</span> <span style="color: #d4d4d4;">education/</span></div>
+            <div style="padding-left: 1rem; margin-top: 0.5rem; color: #d4d4d4; white-space: pre-line; font-family: var(--font-sans); font-size: 0.875rem; line-height: 1.8;">{{ profile.formacion }}</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Terminal: Certificaciones -->
+    {% if profile.certificaciones %}
+    <div style="background: #1e1e1e; border-radius: 16px; overflow: hidden; margin-bottom: 1.5rem; box-shadow: 0 12px 32px rgba(0,0,0,0.35);">
+        <div style="background: #1a1a1a; padding: 0.75rem 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; gap: 6px;">
+                <span style="width:12px;height:12px;background:#ff5f57;border-radius:50%;display:inline-block;"></span>
+                <span style="width:12px;height:12px;background:#febc2e;border-radius:50%;display:inline-block;"></span>
+                <span style="width:12px;height:12px;background:#28c840;border-radius:50%;display:inline-block;"></span>
+            </div>
+            <span style="color: #666; font-size: 0.75rem;">certifications.log</span>
+            <span style="width: 60px;"></span>
+        </div>
+        <div style="padding: 1.5rem; color: #d4d4d4; font-size: 0.9rem; line-height: 2;">
+            <div><span style="color: #28c840;">pgg@wiki</span><span style="color: #666;">:</span><span style="color: #4f8ef7;">~</span><span style="color: #666;">$</span> <span style="color: #febc2e;">ls</span> <span style="color: #d4d4d4;">certifications/</span></div>
+            <div style="padding-left: 1rem; margin-top: 0.5rem;">
+                {% for cert in profile.certificaciones|split:"," %}
+                <div style="color: #d4d4d4;"><span style="color: #febc2e;">CERT</span> — {{ cert|trim }}</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Prompt final -->
+    <div style="background: #1e1e1e; border-radius: 16px; overflow: hidden; box-shadow: 0 12px 32px rgba(0,0,0,0.35);">
+        <div style="background: #1a1a1a; padding: 0.75rem 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; gap: 6px;">
+            <span style="width:12px;height:12px;background:#ff5f57;border-radius:50%;display:inline-block;"></span>
+            <span style="width:12px;height:12px;background:#febc2e;border-radius:50%;display:inline-block;"></span>
+            <span style="width:12px;height:12px;background:#28c840;border-radius:50%;display:inline-block;"></span>
+        </div>
+        <div style="padding: 1.5rem; color: #d4d4d4; font-size: 0.9rem;">
+            <span style="color: #28c840;">pgg@wiki</span><span style="color: #666;">:</span><span style="color: #4f8ef7;">~</span><span style="color: #666;">$</span>
+            <span style="display: inline-block; width: 8px; height: 1rem; background: #d4d4d4; margin-left: 4px; animation: blink 1s step-end infinite; vertical-align: middle;"></span>
+        </div>
+    </div>
+
+</div>
+
+<style>
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+</style>
+
+<canvas id="matrix-rain" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; background:#000;"></canvas>
+<script>
+(function() {
+    const seq = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a'];
+    let pos = 0;
+    let active = false;
+    let animId = null;
+
+    document.addEventListener('keydown', function(e) {
+        if (active) { stopMatrix(); return; }
+        const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+        if (key === seq[pos]) {
+            pos++;
+            if (pos === seq.length) { pos = 0; startMatrix(); }
+        } else {
+            pos = (key === seq[0]) ? 1 : 0;
+        }
+    });
+
+    function startMatrix() {
+        const canvas = document.getElementById('matrix-rain');
+        canvas.style.display = 'block';
+        canvas.addEventListener('click', stopMatrix);
+        active = true;
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        const chars = 'アカサタナハマヤラワ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        const fontSize = 16;
+        const columns = Math.floor(canvas.width / fontSize);
+        const drops = new Array(columns).fill(1);
+
+        function draw() {
+            ctx.fillStyle = 'rgba(0,0,0,0.05)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#28c840';
+            ctx.font = fontSize + 'px monospace';
+            for (let i = 0; i < drops.length; i++) {
+                const text = chars.charAt(Math.floor(Math.random() * chars.length));
+                ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+                if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
+                drops[i]++;
+            }
+            animId = requestAnimationFrame(draw);
+        }
+        draw();
+    }
+
+    function stopMatrix() {
+        const canvas = document.getElementById('matrix-rain');
+        canvas.style.display = 'none';
+        active = false;
+        if (animId) cancelAnimationFrame(animId);
+    }
+})();
+</script>
+
+{% endblock %}
