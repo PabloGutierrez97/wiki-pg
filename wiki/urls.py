@@ -1,6 +1,6 @@
 from django.urls import path
 from . import views
-from .terminal import terminal_command
+from .terminal import terminal_command, terminal_ask
 
 app_name = 'wiki'
 
@@ -18,4 +18,5 @@ urlpatterns = [
     path('search/api/', views.search_api, name='search_api'),
     path('terminal/', views.terminal_page, name='terminal'),
     path('terminal/cmd/', terminal_command, name='terminal_command'),
+    path('terminal/ask/', terminal_ask, name='terminal_ask'),
 ]

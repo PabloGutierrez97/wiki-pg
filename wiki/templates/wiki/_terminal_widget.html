@@ -27,6 +27,20 @@
   #term-fab { bottom:16px; right:16px; }
   #term-window { width:calc(100vw - 16px) !important; right:8px !important; left:8px !important; }
 }
+/* ===== MODO CLARO TERMINAL ===== */
+:root[data-theme="light"] #term-fab { background: var(--accent) !important; border-color: var(--accent) !important; box-shadow: 0 8px 24px rgba(2,132,199,0.35) !important; }
+:root[data-theme="light"] #term-fab span { color: #ffffff !important; }
+:root[data-theme="light"] #term-window { background: #f7f8fa !important; border-color: rgba(0,0,0,0.12) !important; box-shadow: 0 20px 60px rgba(0,0,0,0.18) !important; }
+:root[data-theme="light"] #term-header { background: #e9edf2 !important; border-bottom-color: rgba(0,0,0,0.06) !important; }
+:root[data-theme="light"] #term-body { color: #1f2937 !important; }
+:root[data-theme="light"] #term-input { color: #1f2937 !important; }
+:root[data-theme="light"] #term-output a { color: #0284c7 !important; }
+:root[data-theme="light"] #term-window span[style*="#28c840"] { color: #16a34a !important; }
+:root[data-theme="light"] #term-window span[style*="#4f8ef7"] { color: #0284c7 !important; }
+:root[data-theme="light"] #term-window span[style*="#febc2e"] { color: #b45309 !important; }
+:root[data-theme="light"] #term-window span[style*="#ff5f57"] { color: #dc2626 !important; }
+:root[data-theme="light"] #term-window span[style*="#888"] { color: #6b7280 !important; }
+:root[data-theme="light"] #term-window span[style*="#666"] { color: #9aa1ab !important; }
 </style>
 
 <script>
@@ -101,22 +115,7 @@
 
   function run(cmd) {
     printLine(cmd, true);
-    var esAsk = /^ask(\s|$)/i.test(cmd);
-    var pensando = null, timer = null;
-    if (esAsk) {
-      pensando = document.createElement('div');
-      var label = document.createElement('span'); label.style.color = '#888'; label.textContent = 'La IA esta pensando';
-      var dots = document.createElement('span'); dots.style.color = '#888';
-      pensando.appendChild(label); pensando.appendChild(dots);
-      output.appendChild(pensando);
-      body.scrollTop = body.scrollHeight;
-      var n = 0;
-      timer = setInterval(function(){ n = (n + 1) % 4; dots.textContent = new Array(n + 1).join('.'); }, 400);
-    }
-    function limpiar(){
-      if (timer) { clearInterval(timer); timer = null; }
-      if (pensando && pensando.parentNode) { pensando.parentNode.removeChild(pensando); pensando = null; }
-    }
+    if (/^ask(\s|$)/i.test(cmd)) { runAsk(cmd); return; }
     fetch('/terminal/cmd/', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -124,12 +123,49 @@
     })
     .then(function(r){ return r.json(); })
     .then(function(data){
-      limpiar();
       if (data.clear) { output.innerHTML = ''; return; }
       if (data.output) { printLine(data.output, false); }
       body.scrollTop = body.scrollHeight;
     })
-    .catch(function(){ limpiar(); printLine('[[rojo]]Error de conexion.[[/]]', false); body.scrollTop = body.scrollHeight; });
+    .catch(function(){ printLine('[[rojo]]Error de conexion.[[/]]', false); body.scrollTop = body.scrollHeight; });
+  }
+
+  function runAsk(cmd) {
+    var div = document.createElement('div');
+    output.appendChild(div);
+    var pensando = true, n = 0;
+    var timer = setInterval(function(){
+      if (!pensando) return;
+      n = (n + 1) % 4;
+      div.innerHTML = '<span style="color:#888;">La IA esta pensando' + new Array(n + 1).join('.') + '</span>';
+    }, 400);
+    body.scrollTop = body.scrollHeight;
+    var buffer = '';
+    function pintar(){ div.innerHTML = colorear(buffer); body.scrollTop = body.scrollHeight; }
+    function parar(){ pensando = false; if (timer) { clearInterval(timer); timer = null; } }
+    fetch('/terminal/ask/', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({command: cmd})
+    })
+    .then(function(resp){
+      if (!resp.ok) { throw new Error('http'); }
+      if (!resp.body || !resp.body.getReader) {
+        return resp.text().then(function(t){ parar(); buffer = t; pintar(); });
+      }
+      var reader = resp.body.getReader();
+      var dec = new TextDecoder();
+      function leer(){
+        return reader.read().then(function(r){
+          if (r.done) { return; }
+          var txt = dec.decode(r.value, {stream: true});
+          if (txt) { parar(); buffer += txt; pintar(); }
+          return leer();
+        });
+      }
+      return leer();
+    })
+    .catch(function(){ parar(); if (!buffer) { div.innerHTML = colorear('[[rojo]]Error de conexion.[[/]]'); } });
   }
 
   function applySize() {
