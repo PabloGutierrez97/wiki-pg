@@ -223,15 +223,69 @@ def _cmd_date():
 def _embed(texto):
     url = os.getenv('OLLAMA_URL', 'http://192.168.0.183:11434').rstrip('/') + '/api/embeddings'
     modelo = os.getenv('OLLAMA_EMBED_MODEL', 'bge-m3')
-    payload = json.dumps({"model": modelo, "prompt": (texto or '')[:3000]}).encode('utf-8')
-    try:
-        req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
-        emb = data.get('embedding')
-        return emb if emb else None
-    except Exception:
-        return None
+    payload = json.dumps({"model": modelo, "prompt": (texto or '')[:3000], "keep_alive": "5m"}).encode('utf-8')
+    import time as _time
+    for _i in range(2):
+        try:
+            req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+            emb = data.get('embedding')
+            if emb:
+                return emb
+        except Exception:
+            pass
+        _time.sleep(0.8)
+    return None
+
+
+def _trocear(texto, maximo=900):
+    import re as _re
+    texto = (texto or '').strip()
+    if not texto:
+        return []
+    parrafos = _re.split(r'\n\s*\n', texto)
+    chunks = []
+    actual = ''
+    for p in parrafos:
+        p = p.strip()
+        if not p:
+            continue
+        if actual and len(actual) + len(p) + 2 <= maximo:
+            actual = actual + '\n\n' + p
+        elif len(p) <= maximo:
+            if actual:
+                chunks.append(actual)
+            actual = p
+        else:
+            if actual:
+                chunks.append(actual)
+                actual = ''
+            for j in range(0, len(p), maximo):
+                chunks.append(p[j:j + maximo])
+    if actual:
+        chunks.append(actual)
+    return chunks
+
+
+def reindexar_articulo(a, force=False):
+    import hashlib, json as _json
+    from .models import Article, ArticleChunk
+    texto = (a.title or '') + "\n" + (a.tags or '') + "\n" + (a.content or '')
+    h = hashlib.sha256(texto.encode('utf-8')).hexdigest()
+    if not force and a.embedding_hash == h and a.chunks.exists():
+        return ('sin cambios', a.chunks.count())
+    trozos = _trocear(a.content or '')
+    a.chunks.all().delete()
+    creados = 0
+    for i, tr in enumerate(trozos):
+        emb = _embed((a.title or '') + "\n" + tr)
+        if not emb:
+            continue
+        ArticleChunk.objects.create(article=a, idx=i, text=tr, embedding=_json.dumps(emb))
+        creados += 1
+    Article.objects.filter(pk=a.pk).update(embedding_hash=h, embedding='')
+    return ('indexado', creados)
 
 
 def _coseno(a, b):
@@ -244,18 +298,21 @@ def _coseno(a, b):
     return s / (math.sqrt(na) * math.sqrt(nb))
 
 
-def _buscar_semantico(pregunta, k=3):
+def _buscar_semantico(pregunta, k=4):
     qemb = _embed(pregunta)
     if not qemb:
         return []
     import json as _json
+    from .models import ArticleChunk
     res = []
-    for a in Article.objects.filter(is_published=True).exclude(embedding='').select_related('category'):
+    for c in ArticleChunk.objects.exclude(embedding='').select_related('article', 'article__category'):
+        if not c.article.is_published:
+            continue
         try:
-            emb = _json.loads(a.embedding)
+            emb = _json.loads(c.embedding)
         except Exception:
             continue
-        res.append((a, _coseno(qemb, emb)))
+        res.append((c, _coseno(qemb, emb)))
     res.sort(key=lambda t: t[1], reverse=True)
     return res[:k]
 
@@ -310,10 +367,10 @@ def _cmd_ask(arg, request):
     contacto_items.append('GitHub: https://github.com/PabloGutierrez97')
     contacto_items.append('Wiki: https://wiki.pablogg.dev')
     contacto = ' | '.join(contacto_items)
-    relevantes = _buscar_semantico(pregunta, 3)
+    relevantes = _buscar_semantico(pregunta, 4)
     _bloques = []
-    for _a, _sc in relevantes[:2]:
-        _bloques.append("### %s (slug: %s)\n%s" % (_a.title, _a.slug, (_a.content or '')[:1200]))
+    for _c, _sc in relevantes[:3]:
+        _bloques.append("### %s\n%s" % (_c.article.title, _c.text))
     contexto_rag = "\n\n".join(_bloques) if _bloques else "(sin resultados relevantes)"
 
     system = (
@@ -342,7 +399,7 @@ def _cmd_ask(arg, request):
         "system": system,
         "stream": False,
         "keep_alive": "30m",
-        "options": {"temperature": 0.3, "top_p": 0.9, "repeat_penalty": 1.1, "num_predict": 256}
+        "options": {"temperature": 0.3, "top_p": 0.9, "repeat_penalty": 1.1, "num_predict": 450}
     }).encode('utf-8')
 
     try:
@@ -367,7 +424,7 @@ def _cmd_ask(arg, request):
     salida = "[[verde]]IA[[/]] [[gris]].[[/]] " + respuesta
     art_rel = None
     if relevantes and relevantes[0][1] >= 0.45:
-        art_rel = relevantes[0][0]
+        art_rel = relevantes[0][0].article
     if art_rel is None:
         art_rel = _articulo_relevante(pregunta)
     if art_rel:
@@ -425,3 +482,96 @@ def terminal_command(request):
         salida = f"comando no encontrado: [[amarillo]]{cmd}[[/]]. Escribe [[verde]]help[[/]]."
 
     return JsonResponse({'output': salida})
+
+
+@csrf_exempt
+@require_POST
+def terminal_ask(request):
+    from django.http import StreamingHttpResponse, HttpResponse
+    try:
+        data = json.loads(request.body)
+        pregunta = (data.get('command') or '').strip()
+    except Exception:
+        pregunta = ''
+    if pregunta.lower().startswith('ask'):
+        pregunta = pregunta[3:].strip()
+    if not pregunta:
+        return HttpResponse("Uso: [[amarillo]]ask <pregunta>[[/]]", content_type='text/plain; charset=utf-8')
+    if len(pregunta) > 300:
+        return HttpResponse("[[rojo]]La pregunta es demasiado larga[[/]] (maximo 300 caracteres).", content_type='text/plain; charset=utf-8')
+
+    xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
+    ip = (request.META.get('HTTP_CF_CONNECTING_IP')
+          or (xff.split(',')[0].strip() if xff else '')
+          or request.META.get('REMOTE_ADDR', 'anon'))
+    try:
+        usos = cache.get('ask_rl_' + ip, 0)
+        if usos >= 6:
+            return HttpResponse("[[amarillo]]Vas muy rapido.[[/]] Espera un minuto antes de volver a preguntar.", content_type='text/plain; charset=utf-8')
+        cache.set('ask_rl_' + ip, usos + 1, 60)
+    except Exception:
+        pass
+
+    relevantes = _buscar_semantico(pregunta, 4)
+    _bloques = []
+    for _c, _sc in relevantes[:3]:
+        _bloques.append("### %s\n%s" % (_c.article.title, _c.text))
+    contexto_rag = "\n\n".join(_bloques) if _bloques else "(sin resultados relevantes)"
+    p = Profile.get()
+    perfil = ""
+    if p:
+        perfil = ("%s - %s en %s. %s" % (p.nombre or '', p.cargo or '', p.empresa or '', p.descripcion or '')).strip()
+    system = (
+        "Eres el asistente del wiki tecnico de Pablo Gutierrez Gracia (administrador de sistemas). "
+        "Respondes SIEMPRE en espanol, de forma breve y clara (maximo 5 frases). "
+        "Responde basandote sobre todo en el CONTENIDO RELEVANTE; si no esta ahi, dilo. "
+        "No escribas enlaces ni 'Leer:'; el sistema anade el enlace al final.\n\n"
+        "PERFIL: " + perfil + "\n\n"
+        "CONTENIDO RELEVANTE:\n" + contexto_rag
+    )
+    art_rel = None
+    if relevantes and relevantes[0][1] >= 0.45:
+        art_rel = relevantes[0][0].article
+    if art_rel is None:
+        art_rel = _articulo_relevante(pregunta)
+    link = ("\n\n[[gris]]Leer:[[/]] /article/" + art_rel.slug + "/") if art_rel else ""
+
+    url = os.getenv('OLLAMA_URL', 'http://192.168.0.183:11434').rstrip('/') + '/api/generate'
+    modelo = os.getenv('OLLAMA_MODEL', 'llama3.2:3b')
+    payload = json.dumps({
+        "model": modelo, "prompt": pregunta, "system": system, "stream": True,
+        "keep_alive": "30m",
+        "options": {"temperature": 0.3, "top_p": 0.9, "repeat_penalty": 1.1, "num_predict": 450}
+    }).encode('utf-8')
+
+    def generar():
+        primero = True
+        try:
+            req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                for linea in resp:
+                    linea = linea.strip()
+                    if not linea:
+                        continue
+                    try:
+                        obj = json.loads(linea.decode('utf-8'))
+                    except Exception:
+                        continue
+                    tok = obj.get('response', '')
+                    if tok:
+                        if primero:
+                            yield "[[verde]]IA[[/]] [[gris]].[[/]] " + tok
+                            primero = False
+                        else:
+                            yield tok
+                    if obj.get('done'):
+                        break
+        except Exception:
+            yield "\n[[rojo]]La IA no esta disponible ahora mismo.[[/]]"
+        if link:
+            yield link
+
+    resp = StreamingHttpResponse(generar(), content_type='text/plain; charset=utf-8')
+    resp['X-Accel-Buffering'] = 'no'
+    resp['Cache-Control'] = 'no-cache'
+    return resp

@@ -145,6 +145,19 @@ class HoneypotAttempt(models.Model):
         return f'{self.ip} - {self.username} ({self.created_at:%d/%m/%Y %H:%M})'
 
 
+class ArticleChunk(models.Model):
+    article = models.ForeignKey(Article, on_delete=models.CASCADE, related_name='chunks')
+    idx = models.IntegerField(default=0)
+    text = models.TextField()
+    embedding = models.TextField(blank=True, default='')
+
+    class Meta:
+        ordering = ['article_id', 'idx']
+
+    def __str__(self):
+        return 'chunk %s#%d' % (self.article_id, self.idx)
+
+
 # --- RAG: reindexar automaticamente al guardar un articulo publicado ---
 from django.db.models.signals import post_save as _post_save
 from django.dispatch import receiver as _receiver

@@ -52,21 +52,13 @@ def publish_article_task(article_id):
 
 @shared_task
 def reindex_article_task(article_id):
-    import hashlib, json
     from .models import Article
-    from .terminal import _embed
+    from .terminal import reindexar_articulo
     try:
         a = Article.objects.get(pk=article_id)
     except Article.DoesNotExist:
         return 'articulo no existe'
     if not a.is_published:
         return 'no publicado, se omite'
-    texto = (a.title or '') + "\n" + (a.tags or '') + "\n" + (a.content or '')
-    h = hashlib.sha256(texto.encode('utf-8')).hexdigest()
-    if a.embedding and a.embedding_hash == h:
-        return 'sin cambios'
-    emb = _embed(texto)
-    if not emb:
-        return 'Ollama no disponible'
-    Article.objects.filter(pk=a.pk).update(embedding=json.dumps(emb), embedding_hash=h)
-    return 'indexado (dim %d)' % len(emb)
+    estado, n = reindexar_articulo(a)
+    return '%s (%d fragmentos)' % (estado, n)
