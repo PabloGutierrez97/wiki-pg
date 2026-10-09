@@ -240,3 +240,7 @@ def search_api(request):
                 'category': article.category.name if article.category else '',
             })
     return JsonResponse({'results': resultados})
+
+
+def terminal_page(request):
+    return render(request, 'wiki/terminal.html')
