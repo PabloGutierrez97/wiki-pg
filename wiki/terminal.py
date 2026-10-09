@@ -28,6 +28,7 @@ def _cmd_help():
         "  [[amarillo]]contact[[/]]           Enlaces de contacto",
         "  [[amarillo]]date[[/]]              Fecha y hora actual",
         "  [[amarillo]]ask[[/]] [[gris]]<pregunta>[[/]]    Pregunta libre a la IA (local)",
+        "  [[amarillo]]wikis[[/]]             Otras wikis recomendadas",
         "  [[amarillo]]clear[[/]]             Limpia la pantalla",
     ]
     return "\n".join(lineas)
@@ -218,6 +219,19 @@ def _cmd_date():
     dia = dias[ahora.weekday()]
     mes = meses[ahora.month - 1]
     return f"[[verde]]{dia} {ahora.day} de {mes} de {ahora.year}[[/]] - [[amarillo]]{ahora.strftime('%H:%M:%S')}[[/]]"
+
+
+def _cmd_wikis():
+    wikis = [
+        ("Juan Francisco Trapero", "https://wiki.jtrapero.eu.org/", "Memoria de un homelab: infraestructura autohospedada, Linux, redes, seguridad y automatizacion"),
+    ]
+    lineas = ["[[verde]]Otras wikis recomendadas[[/]]", ""]
+    for nombre, url, desc in wikis:
+        lineas.append("  [[amarillo]]%s[[/]]" % nombre)
+        lineas.append("  %s" % url)
+        lineas.append("  [[gris]]%s[[/]]" % desc)
+        lineas.append("")
+    return "\n".join(lineas).rstrip()
 
 
 def _embed(texto):
@@ -470,6 +484,8 @@ def terminal_command(request):
         salida = _cmd_contact()
     elif cmd == 'date':
         salida = _cmd_date()
+    elif cmd == 'wikis':
+        salida = _cmd_wikis()
     elif cmd == 'ask':
         salida = _cmd_ask(arg, request)
     elif cmd == 'sudo':
