@@ -16,7 +16,6 @@ urlpatterns = [
     path('tag/<str:tag>/', views.tag_detail, name='tag_detail'),
     path('linkedin/generate/<int:article_id>/', views.generate_linkedin_text, name='generate_linkedin_text'),
     path('search/api/', views.search_api, name='search_api'),
-    path('terminal/', views.terminal_page, name='terminal'),
     path('terminal/cmd/', terminal_command, name='terminal_command'),
     path('terminal/ask/', terminal_ask, name='terminal_ask'),
 ]
