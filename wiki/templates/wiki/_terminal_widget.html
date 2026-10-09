@@ -41,6 +41,12 @@
 :root[data-theme="light"] #term-window span[style*="#ff5f57"] { color: #dc2626 !important; }
 :root[data-theme="light"] #term-window span[style*="#888"] { color: #6b7280 !important; }
 :root[data-theme="light"] #term-window span[style*="#666"] { color: #9aa1ab !important; }
+#term-output .tpre { background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); border-radius:6px; padding:8px 10px; margin:6px 0; overflow-x:auto; white-space:pre; font-size:0.82rem; line-height:1.45; }
+#term-output .tcode { background: rgba(255,255,255,0.09); border-radius:4px; padding:1px 5px; font-size:0.9em; }
+#term-output strong { color:#ffffff; font-weight:700; }
+:root[data-theme="light"] #term-output .tpre { background:#eef1f5 !important; border-color:rgba(0,0,0,0.1) !important; }
+:root[data-theme="light"] #term-output .tcode { background:#e6e9ee !important; }
+:root[data-theme="light"] #term-output strong { color:#111827 !important; }
 </style>
 
 <script>
@@ -78,6 +84,25 @@
     t = t.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:#4f8ef7;">$1</a>');
     t = t.replace(/(^|[\s>])(\/article\/[a-z0-9\-]+\/)/g, '$1<a href="$2" style="color:#4f8ef7;">$2</a>');
     return t;
+  }
+
+  function renderMD(raw) {
+    var s = esc(raw);
+    var blocks = [];
+    s = s.replace(/```[a-zA-Z0-9]*\n?([\s\S]*?)```/g, function(m, code){
+      blocks.push(code.replace(/\n+$/, ''));
+      return '\u0000CB' + (blocks.length - 1) + '\u0000';
+    });
+    s = s.replace(/\[\[(verde|azul|amarillo|gris|rojo)\]\]/g, function(m, c){ return '<span style="color:' + COLORES[c] + ';">'; });
+    s = s.replace(/\[\[\/\]\]/g, '</span>');
+    s = s.replace(/`([^`\n]+)`/g, '<code class="tcode">$1</code>');
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+    s = s.replace(/^\s*#{1,6}\s*(.+)$/gm, '<strong>$1</strong>');
+    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" style="color:#4f8ef7;">$1</a>');
+    s = s.replace(/(^|[\s>])(\/article\/[a-z0-9\-]+\/)/g, '$1<a href="$2" style="color:#4f8ef7;">$2</a>');
+    s = s.replace(/\u0000CB(\d+)\u0000/g, function(m, i){ return '<pre class="tpre">' + blocks[parseInt(i, 10)] + '</pre>'; });
+    return s;
   }
 
   var bannerLines = [
@@ -141,7 +166,7 @@
     }, 400);
     body.scrollTop = body.scrollHeight;
     var buffer = '';
-    function pintar(){ div.innerHTML = colorear(buffer); body.scrollTop = body.scrollHeight; }
+    function pintar(){ div.innerHTML = renderMD(buffer); body.scrollTop = body.scrollHeight; }
     function parar(){ pensando = false; if (timer) { clearInterval(timer); timer = null; } }
     fetch('/terminal/ask/', {
       method: 'POST',

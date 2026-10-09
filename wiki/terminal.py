@@ -500,6 +500,16 @@ def terminal_ask(request):
     if len(pregunta) > 300:
         return HttpResponse("[[rojo]]La pregunta es demasiado larga[[/]] (maximo 300 caracteres).", content_type='text/plain; charset=utf-8')
 
+    import unicodedata as _ud
+    _pl = ''.join(ch for ch in _ud.normalize('NFD', pregunta.lower()) if _ud.category(ch) != 'Mn')
+    if (any(k in _pl for k in ['ultim', 'reciente', 'last', 'latest', 'nuevo']) and
+            any(k in _pl for k in ['articulo', 'post', 'entrada', 'publicad', 'subi'])):
+        _u = Article.objects.filter(is_published=True).order_by('-created_at').first()
+        if _u:
+            _t = ("[[verde]]IA[[/]] [[gris]].[[/]] El ultimo articulo publicado es [[azul]]" + _u.title +
+                  "[[/]], del " + _u.created_at.strftime('%d/%m/%Y') + ".\n\n[[gris]]Leer:[[/]] /article/" + _u.slug + "/")
+            return HttpResponse(_t, content_type='text/plain; charset=utf-8')
+
     xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
     ip = (request.META.get('HTTP_CF_CONNECTING_IP')
           or (xff.split(',')[0].strip() if xff else '')
@@ -521,12 +531,26 @@ def terminal_ask(request):
     perfil = ""
     if p:
         perfil = ("%s - %s en %s. %s" % (p.nombre or '', p.cargo or '', p.empresa or '', p.descripcion or '')).strip()
+    _ci = []
+    if p and getattr(p, 'email', ''):
+        _ci.append('Email: ' + p.email)
+    if p and getattr(p, 'linkedin', ''):
+        _ci.append('LinkedIn: ' + p.linkedin)
+    _ci.append('GitHub: https://github.com/PabloGutierrez97')
+    _ci.append('Wiki: https://wiki.pablogg.dev')
+    contacto = ' | '.join(_ci)
+    recientes = Article.objects.filter(is_published=True).order_by('-created_at')[:15]
+    listado_rec = "\n".join("- %s - %s (slug: %s)" % (r.created_at.strftime('%d/%m/%Y'), r.title, r.slug) for r in recientes)
     system = (
         "Eres el asistente del wiki tecnico de Pablo Gutierrez Gracia (administrador de sistemas). "
         "Respondes SIEMPRE en espanol, de forma breve y clara (maximo 5 frases). "
-        "Responde basandote sobre todo en el CONTENIDO RELEVANTE; si no esta ahi, dilo. "
+        "Para procedimientos o temas tecnicos usa el CONTENIDO RELEVANTE. "
+        "Para que articulos hay, cual es el mas reciente o el ultimo, o fechas de publicacion, usa la lista ULTIMOS ARTICULOS (ya esta ordenada del mas nuevo al mas antiguo, con su fecha). "
+        "Para contacto (LinkedIn, email, GitHub) usa CONTACTO. No inventes datos que no esten aqui. "
         "No escribas enlaces ni 'Leer:'; el sistema anade el enlace al final.\n\n"
         "PERFIL: " + perfil + "\n\n"
+        "CONTACTO: " + contacto + "\n\n"
+        "ULTIMOS ARTICULOS (mas reciente primero):\n" + listado_rec + "\n\n"
         "CONTENIDO RELEVANTE:\n" + contexto_rag
     )
     art_rel = None
