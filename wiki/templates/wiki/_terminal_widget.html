@@ -15,7 +15,7 @@
     <div id="term-output"></div>
     <div id="term-prompt-line" style="display:flex; align-items:center;">
       <span style="color:#28c840;">pgg@wiki</span><span style="color:#666;">:</span><span style="color:#4f8ef7;">~</span><span style="color:#666;">$&nbsp;</span>
-      <input id="term-input" autocomplete="off" style="flex:1; background:transparent; border:none; outline:none; color:#d4d4d4; font-family:var(--font-mono); font-size:0.85rem;">
+      <input id="term-input" autocomplete="off" style="flex:1; background:transparent; border:none; outline:none; color:#d4d4d4; font-family:var(--font-mono); font-size:16px;">
     </div>
   </div>
 </div>
@@ -23,6 +23,10 @@
 <style>
 #term-window, #term-window * { text-align:left !important; box-sizing:border-box; }
 #term-output div { margin:0 !important; white-space:pre-wrap; word-break:break-word; }
+@media (max-width: 520px) {
+  #term-fab { bottom:16px; right:16px; }
+  #term-window { width:calc(100vw - 16px) !important; right:8px !important; left:8px !important; }
+}
 </style>
 
 <script>
@@ -209,6 +213,24 @@
     }
   });
 
+  function _ajustarTeclado(){
+    if (win.style.display !== 'flex') return;
+    if (window.innerWidth > 520 || !window.visualViewport) { win.style.top = 'auto'; return; }
+    var vp = window.visualViewport;
+    var kb = Math.max(0, window.innerHeight - vp.height - vp.offsetTop);
+    if (kb > 120) {
+      win.style.top = (vp.offsetTop + 8) + 'px';
+      win.style.bottom = 'auto';
+      win.style.height = (vp.height - 16) + 'px';
+    } else {
+      win.style.top = 'auto';
+      applySize();
+    }
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', _ajustarTeclado);
+    window.visualViewport.addEventListener('scroll', _ajustarTeclado);
+  }
   body.addEventListener('click', function(e){ if (e.target.closest && e.target.closest('a')) return; input.focus(); });
 })();
 </script>

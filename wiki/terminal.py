@@ -220,6 +220,61 @@ def _cmd_date():
     return f"[[verde]]{dia} {ahora.day} de {mes} de {ahora.year}[[/]] - [[amarillo]]{ahora.strftime('%H:%M:%S')}[[/]]"
 
 
+def _embed(texto):
+    url = os.getenv('OLLAMA_URL', 'http://192.168.0.183:11434').rstrip('/') + '/api/embeddings'
+    modelo = os.getenv('OLLAMA_EMBED_MODEL', 'bge-m3')
+    payload = json.dumps({"model": modelo, "prompt": (texto or '')[:3000]}).encode('utf-8')
+    try:
+        req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+        emb = data.get('embedding')
+        return emb if emb else None
+    except Exception:
+        return None
+
+
+def _coseno(a, b):
+    import math
+    s = 0.0; na = 0.0; nb = 0.0
+    for x, y in zip(a, b):
+        s += x * y; na += x * x; nb += y * y
+    if na == 0 or nb == 0:
+        return 0.0
+    return s / (math.sqrt(na) * math.sqrt(nb))
+
+
+def _buscar_semantico(pregunta, k=3):
+    qemb = _embed(pregunta)
+    if not qemb:
+        return []
+    import json as _json
+    res = []
+    for a in Article.objects.filter(is_published=True).exclude(embedding='').select_related('category'):
+        try:
+            emb = _json.loads(a.embedding)
+        except Exception:
+            continue
+        res.append((a, _coseno(qemb, emb)))
+    res.sort(key=lambda t: t[1], reverse=True)
+    return res[:k]
+
+
+def _articulo_relevante(pregunta):
+    import re as _re
+    stop = set(['para','como','que','sobre','tienes','algo','pasame','dame','una','uno','los','las','del','articulo','quiero','leer','con','por','sus','mas','sobre','tiene','hay','algun','alguna'])
+    palabras = [w for w in _re.findall(r'[a-z0-9\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1]+', (pregunta or '').lower()) if len(w) >= 4 and w not in stop]
+    if not palabras:
+        return None
+    mejor, mejor_score = None, 0
+    for a in Article.objects.filter(is_published=True).select_related('category'):
+        blob = (a.title + ' ' + (a.tags or '') + ' ' + a.slug + ' ' + a.category.name).lower()
+        score = sum(1 for w in palabras if w in blob)
+        if score > mejor_score:
+            mejor, mejor_score = a, score
+    return mejor if mejor_score >= 1 else None
+
+
 def _cmd_ask(arg, request):
     pregunta = (arg or '').strip()
     if not pregunta:
@@ -247,14 +302,35 @@ def _cmd_ask(arg, request):
         perfil = perfil.strip()
     arts = Article.objects.filter(is_published=True).select_related('category').order_by('-created_at')[:25]
     listado = "\n".join("- [%s] %s (slug: %s)" % (a.category.name, a.title, a.slug) for a in arts)
+    contacto_items = []
+    if p and getattr(p, 'email', ''):
+        contacto_items.append('Email: ' + p.email)
+    if p and getattr(p, 'linkedin', ''):
+        contacto_items.append('LinkedIn: ' + p.linkedin)
+    contacto_items.append('GitHub: https://github.com/PabloGutierrez97')
+    contacto_items.append('Wiki: https://wiki.pablogg.dev')
+    contacto = ' | '.join(contacto_items)
+    relevantes = _buscar_semantico(pregunta, 3)
+    _bloques = []
+    for _a, _sc in relevantes[:2]:
+        _bloques.append("### %s (slug: %s)\n%s" % (_a.title, _a.slug, (_a.content or '')[:1200]))
+    contexto_rag = "\n\n".join(_bloques) if _bloques else "(sin resultados relevantes)"
 
     system = (
         "Eres el asistente del wiki tecnico de Pablo Gutierrez Gracia (administrador de sistemas). "
         "Respondes SIEMPRE en espanol, de forma breve y clara (maximo 5 frases). "
         "Solo hablas sobre Pablo, su wiki y temas de administracion de sistemas / DevOps. "
         "Si la pregunta no tiene relacion, dilo amablemente y sugiere escribir 'help'. "
-        "Si procede, menciona el articulo relevante por su titulo. No inventes articulos que no esten en la lista.\n\n"
+        "Si recomiendas un articulo, di su titulo y en una linea aparte escribe 'Leer: /article/<slug>/' usando el slug EXACTO de la lista, para que el enlace sea clicable. "
+        "No inventes articulos ni datos que no esten en el contexto; si no lo sabes, dilo claramente. "
+        "Responde basandote sobre todo en el CONTENIDO RELEVANTE que te paso; si la respuesta no esta ahi, dilo. "
+        "Si preguntan por contacto (LinkedIn, email, GitHub, wiki), usa los datos de la seccion CONTACTO.\n\n"
+        "EJEMPLOS:\n"
+        "P: tienes algo sobre zabbix? R: Si. Por ejemplo 'Zabbix con proxies: monitorizar sedes remotas sin abrir 20 puertos'.\nLeer: /article/zabbix-proxies-sedes-remotas/\n"
+        "P: receta de tortilla? R: Solo ayudo con la wiki de Pablo y temas de administracion de sistemas. Escribe help para ver que puedo hacer.\n\n"
         "PERFIL: " + perfil + "\n\n"
+        "CONTACTO: " + contacto + "\n\n"
+        "CONTENIDO RELEVANTE:\n" + contexto_rag + "\n\n"
         "ARTICULOS PUBLICADOS:\n" + listado
     )
 
@@ -266,7 +342,7 @@ def _cmd_ask(arg, request):
         "system": system,
         "stream": False,
         "keep_alive": "30m",
-        "options": {"temperature": 0.3, "num_predict": 256}
+        "options": {"temperature": 0.3, "top_p": 0.9, "repeat_penalty": 1.1, "num_predict": 256}
     }).encode('utf-8')
 
     try:
@@ -279,7 +355,24 @@ def _cmd_ask(arg, request):
 
     if not respuesta:
         return "No he podido generar una respuesta. Prueba a reformular la pregunta."
-    return "[[verde]]IA[[/]] [[gris]].[[/]] " + respuesta
+    import re as _re
+    _resp = []
+    for _ln in respuesta.split("\n"):
+        if _re.match(r'(?i)^\s*leer\s*:?\s*(/article/\S*)?\s*$', _ln):
+            continue
+        _resp.append(_re.sub(r'/article/\S*', '', _ln))
+    respuesta = "\n".join(_resp).strip()
+    if not respuesta:
+        respuesta = "Te recomiendo este articulo:"
+    salida = "[[verde]]IA[[/]] [[gris]].[[/]] " + respuesta
+    art_rel = None
+    if relevantes and relevantes[0][1] >= 0.45:
+        art_rel = relevantes[0][0]
+    if art_rel is None:
+        art_rel = _articulo_relevante(pregunta)
+    if art_rel:
+        salida += "\n\n[[gris]]Leer:[[/]] /article/" + art_rel.slug + "/"
+    return salida
 
 
 @csrf_exempt

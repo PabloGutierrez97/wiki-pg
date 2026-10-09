@@ -43,6 +43,10 @@ class Article(models.Model):
     linkedin_published = models.BooleanField(default=False)
     linkedin_task_id = models.CharField(max_length=100, blank=True, null=True)
 
+    # --- RAG: busqueda semantica ---
+    embedding = models.TextField(blank=True, default='')
+    embedding_hash = models.CharField(max_length=64, blank=True, default='')
+
     class Meta:
         ordering = ['-created_at']
 
@@ -139,3 +143,21 @@ class HoneypotAttempt(models.Model):
 
     def __str__(self):
         return f'{self.ip} - {self.username} ({self.created_at:%d/%m/%Y %H:%M})'
+
+
+# --- RAG: reindexar automaticamente al guardar un articulo publicado ---
+from django.db.models.signals import post_save as _post_save
+from django.dispatch import receiver as _receiver
+
+
+@_receiver(_post_save, sender=Article)
+def _reindex_articulo(sender, instance, created=False, update_fields=None, **kwargs):
+    if update_fields and set(update_fields) <= {'embedding', 'embedding_hash'}:
+        return
+    if not instance.is_published:
+        return
+    try:
+        from .tasks import reindex_article_task
+        reindex_article_task.delay(instance.pk)
+    except Exception:
+        pass
