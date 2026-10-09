@@ -95,6 +95,7 @@
     });
     s = s.replace(/\[\[(verde|azul|amarillo|gris|rojo)\]\]/g, function(m, c){ return '<span style="color:' + COLORES[c] + ';">'; });
     s = s.replace(/\[\[\/\]\]/g, '</span>');
+    s = s.replace(/^(\s*)[\*\-]\s+/gm, '$1\u2022 '); /* MD-BULLETS */
     s = s.replace(/`([^`\n]+)`/g, '<code class="tcode">$1</code>');
     s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
