@@ -28,3 +28,8 @@ db.sqlite3-journal
 *.swp
 *.swo
 .DS_Store
+*.bak
+
+# Scripts de parcheo y backups temporales
+patch_*.py
+*.bak*

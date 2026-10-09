@@ -1,0 +1,214 @@
+
+<button id="term-fab" title="Abrir terminal" style="position:fixed; bottom:24px; right:24px; width:58px; height:58px; border-radius:50%; background:#1a1f2e; border:2px solid var(--accent); box-shadow:0 8px 24px rgba(0,0,0,0.4); cursor:pointer; z-index:1000; display:flex; align-items:center; justify-content:center; transition:transform 0.15s;">
+  <span style="font-family:var(--font-mono); color:var(--accent); font-size:1.3rem; font-weight:700;">&gt;_</span>
+</button>
+
+<div id="term-window" style="position:fixed; bottom:94px; right:24px; width:min(440px, calc(100vw - 32px)); height:min(540px, calc(100vh - 140px)); background:#1e1e1e; border-radius:14px; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,0.55); border:1px solid rgba(255,255,255,0.08); z-index:1000; display:none; flex-direction:column;">
+  <div id="term-header" style="background:#1a1a1a; padding:0.7rem 1rem; display:flex; align-items:center; gap:0.5rem; border-bottom:1px solid rgba(255,255,255,0.05); flex-shrink:0;">
+    <span id="term-btn-close" title="Cerrar" style="width:13px;height:13px;background:#ff5f57;border-radius:50%;cursor:pointer;"></span>
+    <span id="term-btn-min" title="Minimizar" style="width:13px;height:13px;background:#febc2e;border-radius:50%;cursor:pointer;"></span>
+    <span id="term-btn-max" title="Maximizar" style="width:13px;height:13px;background:#28c840;border-radius:50%;cursor:pointer;"></span>
+    <span style="flex:1; text-align:center; color:#888; font-size:0.76rem; font-family:var(--font-mono);">pgg@wiki: ~</span>
+    <span style="width:52px;"></span>
+  </div>
+  <div id="term-body" style="flex:1; padding:1rem 1.1rem; overflow-y:auto; font-family:var(--font-mono); font-size:0.85rem; line-height:1.6; color:#d4d4d4; cursor:text;">
+    <div id="term-output"></div>
+    <div id="term-prompt-line" style="display:flex; align-items:center;">
+      <span style="color:#28c840;">pgg@wiki</span><span style="color:#666;">:</span><span style="color:#4f8ef7;">~</span><span style="color:#666;">$&nbsp;</span>
+      <input id="term-input" autocomplete="off" style="flex:1; background:transparent; border:none; outline:none; color:#d4d4d4; font-family:var(--font-mono); font-size:0.85rem;">
+    </div>
+  </div>
+</div>
+
+<style>
+#term-window, #term-window * { text-align:left !important; box-sizing:border-box; }
+#term-output div { margin:0 !important; white-space:pre-wrap; word-break:break-word; }
+</style>
+
+<script>
+(function() {
+  var fab = document.getElementById('term-fab');
+  var win = document.getElementById('term-window');
+  var body = document.getElementById('term-body');
+  var output = document.getElementById('term-output');
+  var input = document.getElementById('term-input');
+  var btnClose = document.getElementById('term-btn-close');
+  var btnMin = document.getElementById('term-btn-min');
+  var btnMax = document.getElementById('term-btn-max');
+  var history = [];
+  var histIdx = -1;
+  var started = false;
+  var minimized = false;
+  var maximized = false;
+
+  var PUBLICOS = ['help','whoami','about','stack','ls','cat','buscar','tree','stats','neofetch','contact','date','ask','clear'];
+  var CONOCIDOS = PUBLICOS.concat(['sudo','exit','logout','quit']);
+
+  var COLORES = {
+    'verde': '#28c840', 'azul': '#4f8ef7', 'amarillo': '#febc2e',
+    'gris': '#888', 'rojo': '#ff5f57'
+  };
+
+  function esc(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  function colorear(texto) {
+    var t = esc(texto);
+    t = t.replace(/\[\[(verde|azul|amarillo|gris|rojo)\]\]/g, function(m, c){
+      return '<span style="color:' + COLORES[c] + ';">';
+    });
+    t = t.replace(/\[\[\/\]\]/g, '</span>');
+    t = t.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:#4f8ef7;">$1</a>');
+    t = t.replace(/(^|[\s>])(\/article\/[a-z0-9\-]+\/)/g, '$1<a href="$2" style="color:#4f8ef7;">$2</a>');
+    return t;
+  }
+
+  var bannerLines = [
+    '[[verde]]Wiki PG — Terminal interactivo[[/]]',
+    'Explora la wiki como si fuera un servidor.',
+    'Escribe [[amarillo]]help[[/]] para empezar o [[amarillo]]ask <pregunta>[[/]] para hablar con la IA.',
+    ' '
+  ];
+
+  function printLine(text, isPrompt) {
+    var div = document.createElement('div');
+    if (isPrompt) {
+      div.innerHTML = '<span style="color:#28c840;">pgg@wiki</span><span style="color:#666;">:</span><span style="color:#4f8ef7;">~</span><span style="color:#666;">$</span> ' + esc(text);
+    } else {
+      div.innerHTML = colorear(text);
+    }
+    output.appendChild(div);
+  }
+
+  function _lev(a,b){
+    var m=a.length,n=b.length,d=[],i,j;
+    for(i=0;i<=m;i++){d[i]=[i];}
+    for(j=0;j<=n;j++){d[0][j]=j;}
+    for(i=1;i<=m;i++){for(j=1;j<=n;j++){
+      var c=(a.charAt(i-1)===b.charAt(j-1))?0:1;
+      d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+c);
+    }}
+    return d[m][n];
+  }
+  function _sugerir(tok){
+    var best=null,bd=99;
+    PUBLICOS.forEach(function(c){var x=_lev(tok,c); if(x<bd){bd=x;best=c;}});
+    return bd<=2?best:null;
+  }
+
+  function run(cmd) {
+    printLine(cmd, true);
+    var esAsk = /^ask(\s|$)/i.test(cmd);
+    var pensando = null, timer = null;
+    if (esAsk) {
+      pensando = document.createElement('div');
+      var label = document.createElement('span'); label.style.color = '#888'; label.textContent = 'La IA esta pensando';
+      var dots = document.createElement('span'); dots.style.color = '#888';
+      pensando.appendChild(label); pensando.appendChild(dots);
+      output.appendChild(pensando);
+      body.scrollTop = body.scrollHeight;
+      var n = 0;
+      timer = setInterval(function(){ n = (n + 1) % 4; dots.textContent = new Array(n + 1).join('.'); }, 400);
+    }
+    function limpiar(){
+      if (timer) { clearInterval(timer); timer = null; }
+      if (pensando && pensando.parentNode) { pensando.parentNode.removeChild(pensando); pensando = null; }
+    }
+    fetch('/terminal/cmd/', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({command: cmd})
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      limpiar();
+      if (data.clear) { output.innerHTML = ''; return; }
+      if (data.output) { printLine(data.output, false); }
+      body.scrollTop = body.scrollHeight;
+    })
+    .catch(function(){ limpiar(); printLine('[[rojo]]Error de conexion.[[/]]', false); body.scrollTop = body.scrollHeight; });
+  }
+
+  function applySize() {
+    if (minimized) {
+      body.style.display = 'none';
+      win.style.height = 'auto';
+    } else {
+      body.style.display = 'block';
+      if (maximized) {
+        win.style.width = 'min(900px, calc(100vw - 32px))';
+        win.style.height = 'calc(100vh - 120px)';
+        win.style.bottom = '24px';
+      } else {
+        win.style.width = 'min(440px, calc(100vw - 32px))';
+        win.style.height = 'min(540px, calc(100vh - 140px))';
+        win.style.bottom = '94px';
+      }
+    }
+  }
+
+  function openWin() {
+    win.style.display = 'flex';
+    if (!started) {
+      bannerLines.forEach(function(l){ printLine(l, false); });
+      started = true;
+    }
+    applySize();
+    setTimeout(function(){ input.focus(); }, 50);
+  }
+  function closeWin() { win.style.display = 'none'; }
+
+  fab.addEventListener('mouseenter', function(){ fab.style.transform = 'scale(1.08)'; });
+  fab.addEventListener('mouseleave', function(){ fab.style.transform = 'scale(1)'; });
+  fab.addEventListener('click', function(){
+    if (win.style.display === 'flex') closeWin(); else openWin();
+  });
+  btnClose.addEventListener('click', closeWin);
+  btnMin.addEventListener('click', function(){ minimized = !minimized; applySize(); });
+  btnMax.addEventListener('click', function(){ maximized = !maximized; if (minimized) minimized = false; applySize(); });
+
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      var v = input.value.replace(/^\s+/,'');
+      if (v.indexOf(' ') !== -1) return;
+      if (!v) { printLine('[[gris]]' + PUBLICOS.join('  ') + '[[/]]', false); body.scrollTop = body.scrollHeight; return; }
+      var ms = PUBLICOS.filter(function(c){ return c.indexOf(v.toLowerCase()) === 0; });
+      if (ms.length === 1) { input.value = ms[0] + ' '; }
+      else if (ms.length > 1) { printLine('[[gris]]' + ms.join('  ') + '[[/]]', false); body.scrollTop = body.scrollHeight; }
+      return;
+    }
+    if (e.key === 'Enter') {
+      var raw = input.value.trim();
+      input.value = '';
+      if (!raw) return;
+      history.unshift(raw); histIdx = -1;
+      var tok = raw.split(/\s+/)[0].toLowerCase();
+      if (CONOCIDOS.indexOf(tok) === -1) {
+        printLine(raw, true);
+        var sug = _sugerir(tok);
+        printLine('[[rojo]]comando no reconocido:[[/]] ' + tok, false);
+        if (sug) { printLine('[[gris]]quisiste decir[[/]] [[azul]]' + sug + '[[/]][[gris]]?[[/]]', false); }
+        else { printLine('[[gris]]escribe[[/]] [[amarillo]]help[[/]] [[gris]]para ver los comandos.[[/]]', false); }
+        body.scrollTop = body.scrollHeight;
+        return;
+      }
+      run(raw);
+      setTimeout(function(){ body.scrollTop = body.scrollHeight; }, 30);
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      if (histIdx < history.length - 1) { histIdx++; input.value = history[histIdx]; }
+      e.preventDefault();
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      if (histIdx > 0) { histIdx--; input.value = history[histIdx]; }
+      else { histIdx = -1; input.value = ''; }
+      e.preventDefault();
+      return;
+    }
+  });
+
+  body.addEventListener('click', function(e){ if (e.target.closest && e.target.closest('a')) return; input.focus(); });
+})();
+</script>
