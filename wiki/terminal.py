@@ -555,6 +555,14 @@ def terminal_ask(request):
     _ci.append('GitHub: https://github.com/PabloGutierrez97')
     _ci.append('Wiki: https://wiki.pablogg.dev')
     contacto = ' | '.join(_ci)
+    stack_txt = ""
+    if p and getattr(p, 'stack', ''):
+        try:
+            import json as _json
+            _sd = _json.loads(p.stack)
+            stack_txt = "; ".join("%s: %s" % (k, v) for k, v in _sd.items())
+        except Exception:
+            stack_txt = (p.stack or '').strip()
     recientes = Article.objects.filter(is_published=True).order_by('-created_at')[:15]
     listado_rec = "\n".join("- %s - %s (slug: %s)" % (r.created_at.strftime('%d/%m/%Y'), r.title, r.slug) for r in recientes)
     system = (
@@ -563,9 +571,12 @@ def terminal_ask(request):
         "Para procedimientos o temas tecnicos usa el CONTENIDO RELEVANTE. "
         "Para que articulos hay, cual es el mas reciente o el ultimo, o fechas de publicacion, usa la lista ULTIMOS ARTICULOS (ya esta ordenada del mas nuevo al mas antiguo, con su fecha). "
         "Para contacto (LinkedIn, email, GitHub) usa CONTACTO. No inventes datos que no esten aqui. "
+        "Para que tecnologias o herramientas domina Pablo, usa TECNOLOGIAS QUE DOMINA. "
+        "Responde SIEMPRE con tus propias palabras y de forma natural; nunca copies literalmente las etiquetas ni listas de las secciones del contexto (PERFIL, TECNOLOGIAS, CONTACTO, etc.). "
         "No escribas enlaces ni 'Leer:'; el sistema anade el enlace al final.\n\n"
         "PERFIL: " + perfil + "\n\n"
         "CONTACTO: " + contacto + "\n\n"
+        "TECNOLOGIAS QUE DOMINA: " + stack_txt + "\n\n"
         "ULTIMOS ARTICULOS (mas reciente primero):\n" + listado_rec + "\n\n"
         "CONTENIDO RELEVANTE:\n" + contexto_rag
     )
