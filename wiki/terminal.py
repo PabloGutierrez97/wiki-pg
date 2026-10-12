@@ -346,6 +346,59 @@ def _articulo_relevante(pregunta):
     return mejor if mejor_score >= 1 else None
 
 
+def _contexto_ask(pregunta, request):
+    relevantes = _buscar_semantico(pregunta, 4)
+    _bloques = []
+    for _c, _sc in relevantes[:3]:
+        _bloques.append("### %s\n%s" % (_c.article.title, _c.text))
+    contexto_rag = "\n\n".join(_bloques) if _bloques else "(sin resultados relevantes)"
+    p = Profile.get()
+    perfil = ""
+    if p:
+        perfil = ("%s - %s en %s. %s" % (p.nombre or '', p.cargo or '', p.empresa or '', p.descripcion or '')).strip()
+    _ci = []
+    if p and getattr(p, 'email', ''):
+        _ci.append('Email: ' + p.email)
+    if p and getattr(p, 'linkedin', ''):
+        _ci.append('LinkedIn: ' + p.linkedin)
+    _ci.append('GitHub: https://github.com/PabloGutierrez97')
+    _ci.append('Wiki: https://wiki.pablogg.dev')
+    contacto = ' | '.join(_ci)
+    stack_txt = ""
+    if p and getattr(p, 'stack', ''):
+        try:
+            import json as _json
+            _sd = _json.loads(p.stack)
+            stack_txt = "; ".join("%s: %s" % (k, v) for k, v in _sd.items())
+        except Exception:
+            stack_txt = (p.stack or '').strip()
+    recientes = Article.objects.filter(is_published=True).order_by('-created_at')[:15]
+    listado_rec = "\n".join("- %s - %s (slug: %s)" % (r.created_at.strftime('%d/%m/%Y'), r.title, r.slug) for r in recientes)
+    system = (
+        "Eres el asistente del wiki tecnico de Pablo Gutierrez Gracia (administrador de sistemas). "
+        "Respondes SIEMPRE en espanol, de forma breve y clara (maximo 5 frases). "
+        "IMPORTANTE: solo respondes sobre Pablo Gutierrez, su wiki y temas de administracion de sistemas, redes, virtualizacion, DevOps o tecnologia. "
+        "Si te preguntan cualquier otra cosa (historia, geografia, deportes, cultura general, cocina, famosos, etc.), NO contestes a la pregunta: responde amablemente que solo puedes ayudar con la wiki de Pablo y temas de sistemas, y sugiere escribir help. "
+        "Para procedimientos o temas tecnicos usa el CONTENIDO RELEVANTE. "
+        "Para que articulos hay, cual es el mas reciente o el ultimo, o fechas de publicacion, usa la lista ULTIMOS ARTICULOS (ya esta ordenada del mas nuevo al mas antiguo, con su fecha). "
+        "Para contacto (LinkedIn, email, GitHub) usa CONTACTO. No inventes datos que no esten aqui. "
+        "Para que tecnologias o herramientas domina Pablo, usa TECNOLOGIAS QUE DOMINA. "
+        "Responde SIEMPRE con tus propias palabras y de forma natural; nunca copies literalmente las etiquetas ni listas de las secciones del contexto (PERFIL, TECNOLOGIAS, CONTACTO, etc.). "
+        "No escribas enlaces ni 'Leer:'; el sistema anade el enlace al final.\n\n"
+        "PERFIL: " + perfil + "\n\n"
+        "CONTACTO: " + contacto + "\n\n"
+        "TECNOLOGIAS QUE DOMINA: " + stack_txt + "\n\n"
+        "ULTIMOS ARTICULOS (mas reciente primero):\n" + listado_rec + "\n\n"
+        "CONTENIDO RELEVANTE:\n" + contexto_rag
+    )
+    art_rel = None
+    if relevantes and relevantes[0][1] >= 0.45:
+        art_rel = relevantes[0][0].article
+    if art_rel is None:
+        art_rel = _articulo_relevante(pregunta)
+    return system, art_rel
+
+
 def _cmd_ask(arg, request):
     pregunta = (arg or '').strip()
     if not pregunta:
@@ -366,44 +419,8 @@ def _cmd_ask(arg, request):
     except Exception:
         pass
 
-    p = Profile.get()
-    perfil = ""
-    if p:
-        perfil = "%s - %s en %s. %s" % (p.nombre or '', p.cargo or '', p.empresa or '', p.descripcion or '')
-        perfil = perfil.strip()
-    arts = Article.objects.filter(is_published=True).select_related('category').order_by('-created_at')[:25]
-    listado = "\n".join("- [%s] %s (slug: %s)" % (a.category.name, a.title, a.slug) for a in arts)
-    contacto_items = []
-    if p and getattr(p, 'email', ''):
-        contacto_items.append('Email: ' + p.email)
-    if p and getattr(p, 'linkedin', ''):
-        contacto_items.append('LinkedIn: ' + p.linkedin)
-    contacto_items.append('GitHub: https://github.com/PabloGutierrez97')
-    contacto_items.append('Wiki: https://wiki.pablogg.dev')
-    contacto = ' | '.join(contacto_items)
-    relevantes = _buscar_semantico(pregunta, 4)
-    _bloques = []
-    for _c, _sc in relevantes[:3]:
-        _bloques.append("### %s\n%s" % (_c.article.title, _c.text))
-    contexto_rag = "\n\n".join(_bloques) if _bloques else "(sin resultados relevantes)"
+    system, art_rel = _contexto_ask(pregunta, request)
 
-    system = (
-        "Eres el asistente del wiki tecnico de Pablo Gutierrez Gracia (administrador de sistemas). "
-        "Respondes SIEMPRE en espanol, de forma breve y clara (maximo 5 frases). "
-        "Solo hablas sobre Pablo, su wiki y temas de administracion de sistemas / DevOps. "
-        "Si la pregunta no tiene relacion, dilo amablemente y sugiere escribir 'help'. "
-        "Si recomiendas un articulo, di su titulo y en una linea aparte escribe 'Leer: /article/<slug>/' usando el slug EXACTO de la lista, para que el enlace sea clicable. "
-        "No inventes articulos ni datos que no esten en el contexto; si no lo sabes, dilo claramente. "
-        "Responde basandote sobre todo en el CONTENIDO RELEVANTE que te paso; si la respuesta no esta ahi, dilo. "
-        "Si preguntan por contacto (LinkedIn, email, GitHub, wiki), usa los datos de la seccion CONTACTO.\n\n"
-        "EJEMPLOS:\n"
-        "P: tienes algo sobre zabbix? R: Si. Por ejemplo 'Zabbix con proxies: monitorizar sedes remotas sin abrir 20 puertos'.\nLeer: /article/zabbix-proxies-sedes-remotas/\n"
-        "P: receta de tortilla? R: Solo ayudo con la wiki de Pablo y temas de administracion de sistemas. Escribe help para ver que puedo hacer.\n\n"
-        "PERFIL: " + perfil + "\n\n"
-        "CONTACTO: " + contacto + "\n\n"
-        "CONTENIDO RELEVANTE:\n" + contexto_rag + "\n\n"
-        "ARTICULOS PUBLICADOS:\n" + listado
-    )
 
     url = os.getenv('OLLAMA_URL', 'http://192.168.0.183:11434').rstrip('/') + '/api/generate'
     modelo = os.getenv('OLLAMA_MODEL', 'llama3.2:3b')
@@ -436,11 +453,6 @@ def _cmd_ask(arg, request):
     if not respuesta:
         respuesta = "Te recomiendo este articulo:"
     salida = "[[verde]]IA[[/]] [[gris]].[[/]] " + respuesta
-    art_rel = None
-    if relevantes and relevantes[0][1] >= 0.45:
-        art_rel = relevantes[0][0].article
-    if art_rel is None:
-        art_rel = _articulo_relevante(pregunta)
     if art_rel:
         salida += "\n\n[[gris]]Leer:[[/]] /article/" + art_rel.slug + "/"
     return salida
@@ -500,6 +512,19 @@ def terminal_command(request):
     return JsonResponse({'output': salida})
 
 
+def _stream_texto(texto):
+    from django.http import StreamingHttpResponse
+    import time as _t, re as _re
+    def _gen():
+        for _p in _re.findall(r'\S+\s*', texto):
+            yield _p
+            _t.sleep(0.03)
+    _r = StreamingHttpResponse(_gen(), content_type='text/plain; charset=utf-8')
+    _r['X-Accel-Buffering'] = 'no'
+    _r['Cache-Control'] = 'no-cache'
+    return _r
+
+
 @csrf_exempt
 @require_POST
 def terminal_ask(request):
@@ -512,9 +537,9 @@ def terminal_ask(request):
     if pregunta.lower().startswith('ask'):
         pregunta = pregunta[3:].strip()
     if not pregunta:
-        return HttpResponse("Uso: [[amarillo]]ask <pregunta>[[/]]", content_type='text/plain; charset=utf-8')
+        return _stream_texto("Uso: [[amarillo]]ask <pregunta>[[/]]")
     if len(pregunta) > 300:
-        return HttpResponse("[[rojo]]La pregunta es demasiado larga[[/]] (maximo 300 caracteres).", content_type='text/plain; charset=utf-8')
+        return _stream_texto("[[rojo]]La pregunta es demasiado larga[[/]] (maximo 300 caracteres).")
 
     import unicodedata as _ud
     _pl = ''.join(ch for ch in _ud.normalize('NFD', pregunta.lower()) if _ud.category(ch) != 'Mn')
@@ -524,7 +549,19 @@ def terminal_ask(request):
         if _u:
             _t = ("[[verde]]IA[[/]] [[gris]].[[/]] El ultimo articulo publicado es [[azul]]" + _u.title +
                   "[[/]], del " + _u.created_at.strftime('%d/%m/%Y') + ".\n\n[[gris]]Leer:[[/]] /article/" + _u.slug + "/")
-            return HttpResponse(_t, content_type='text/plain; charset=utf-8')
+            return _stream_texto(_t)
+
+    if any(k in _pl for k in ['como funcionas', 'como trabajas', 'como estas hecha', 'como estas programad', 'como estas construid', 'como estas basad', 'estas configurad', 'te configuraron', 'fuiste configurad', 'como te configuraron', 'te programaron', 'te han programado', 'te hicieron', 'te crearon', 'te construyeron', 'te desarrollaron', 'te montaron', 'que modelo eres', 'que modelo usas', 'que ia eres', 'con que estas hecha', 'en que estas basad', 'como te programaron', 'como te hicieron', 'como te crearon']):
+        _t = ("[[verde]]IA[[/]] [[gris]].[[/]] Funciono con un modelo de lenguaje [[azul]]Llama 3.2[[/]] ejecutandose en local a traves de [[azul]]Ollama[[/]], sin depender de ninguna API externa. "
+              "Para responder sobre la wiki uso un sistema RAG: busco los fragmentos mas relevantes de los articulos con embeddings ([[azul]]bge-m3[[/]]) y similitud coseno, y se los paso al modelo. "
+              "Todo esta montado sobre [[azul]]Django[[/]], que hace de proxy seguro hacia el servidor de IA, y la respuesta te llega en streaming.")
+        return _stream_texto(_t)
+
+    if any(k in _pl for k in ['coseno', 'embedding', 'como funciona el rag', 'que es el rag', 'como encuentras los articulos', 'como buscas los articulos', 'como recuperas']):
+        _t = ("[[verde]]IA[[/]] [[gris]].[[/]] La [[azul]]similitud coseno[[/]] mide lo parecidos que son dos textos por su significado. Primero convierto tu pregunta y cada fragmento de los articulos en un vector de numeros (un embedding de 1024 dimensiones con bge-m3) que representa su sentido. "
+              "Luego calculo el coseno del angulo entre el vector de tu pregunta y el de cada fragmento: va de 0 (nada que ver) a 1 (practicamente el mismo tema). "
+              "Me quedo con los fragmentos de mayor puntuacion y se los paso al modelo. Lo bueno es que compara el significado, no las palabras exactas: por eso 'copiar archivos a la nube' encuentra el articulo de rclone aunque no digas 'rclone'.")
+        return _stream_texto(_t)
 
     xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
     ip = (request.META.get('HTTP_CF_CONNECTING_IP')
@@ -533,58 +570,12 @@ def terminal_ask(request):
     try:
         usos = cache.get('ask_rl_' + ip, 0)
         if usos >= 6:
-            return HttpResponse("[[amarillo]]Vas muy rapido.[[/]] Espera un minuto antes de volver a preguntar.", content_type='text/plain; charset=utf-8')
+            return _stream_texto("[[amarillo]]Vas muy rapido.[[/]] Espera un minuto antes de volver a preguntar.")
         cache.set('ask_rl_' + ip, usos + 1, 60)
     except Exception:
         pass
 
-    relevantes = _buscar_semantico(pregunta, 4)
-    _bloques = []
-    for _c, _sc in relevantes[:3]:
-        _bloques.append("### %s\n%s" % (_c.article.title, _c.text))
-    contexto_rag = "\n\n".join(_bloques) if _bloques else "(sin resultados relevantes)"
-    p = Profile.get()
-    perfil = ""
-    if p:
-        perfil = ("%s - %s en %s. %s" % (p.nombre or '', p.cargo or '', p.empresa or '', p.descripcion or '')).strip()
-    _ci = []
-    if p and getattr(p, 'email', ''):
-        _ci.append('Email: ' + p.email)
-    if p and getattr(p, 'linkedin', ''):
-        _ci.append('LinkedIn: ' + p.linkedin)
-    _ci.append('GitHub: https://github.com/PabloGutierrez97')
-    _ci.append('Wiki: https://wiki.pablogg.dev')
-    contacto = ' | '.join(_ci)
-    stack_txt = ""
-    if p and getattr(p, 'stack', ''):
-        try:
-            import json as _json
-            _sd = _json.loads(p.stack)
-            stack_txt = "; ".join("%s: %s" % (k, v) for k, v in _sd.items())
-        except Exception:
-            stack_txt = (p.stack or '').strip()
-    recientes = Article.objects.filter(is_published=True).order_by('-created_at')[:15]
-    listado_rec = "\n".join("- %s - %s (slug: %s)" % (r.created_at.strftime('%d/%m/%Y'), r.title, r.slug) for r in recientes)
-    system = (
-        "Eres el asistente del wiki tecnico de Pablo Gutierrez Gracia (administrador de sistemas). "
-        "Respondes SIEMPRE en espanol, de forma breve y clara (maximo 5 frases). "
-        "Para procedimientos o temas tecnicos usa el CONTENIDO RELEVANTE. "
-        "Para que articulos hay, cual es el mas reciente o el ultimo, o fechas de publicacion, usa la lista ULTIMOS ARTICULOS (ya esta ordenada del mas nuevo al mas antiguo, con su fecha). "
-        "Para contacto (LinkedIn, email, GitHub) usa CONTACTO. No inventes datos que no esten aqui. "
-        "Para que tecnologias o herramientas domina Pablo, usa TECNOLOGIAS QUE DOMINA. "
-        "Responde SIEMPRE con tus propias palabras y de forma natural; nunca copies literalmente las etiquetas ni listas de las secciones del contexto (PERFIL, TECNOLOGIAS, CONTACTO, etc.). "
-        "No escribas enlaces ni 'Leer:'; el sistema anade el enlace al final.\n\n"
-        "PERFIL: " + perfil + "\n\n"
-        "CONTACTO: " + contacto + "\n\n"
-        "TECNOLOGIAS QUE DOMINA: " + stack_txt + "\n\n"
-        "ULTIMOS ARTICULOS (mas reciente primero):\n" + listado_rec + "\n\n"
-        "CONTENIDO RELEVANTE:\n" + contexto_rag
-    )
-    art_rel = None
-    if relevantes and relevantes[0][1] >= 0.45:
-        art_rel = relevantes[0][0].article
-    if art_rel is None:
-        art_rel = _articulo_relevante(pregunta)
+    system, art_rel = _contexto_ask(pregunta, request)
     link = ("\n\n[[gris]]Leer:[[/]] /article/" + art_rel.slug + "/") if art_rel else ""
 
     url = os.getenv('OLLAMA_URL', 'http://192.168.0.183:11434').rstrip('/') + '/api/generate'
