@@ -346,6 +346,36 @@ def _articulo_relevante(pregunta):
     return mejor if mejor_score >= 1 else None
 
 
+def _pregunta_identidad(pregunta):
+    import unicodedata as _ud
+    q = ''.join(c for c in _ud.normalize('NFD', (pregunta or '').lower()) if _ud.category(c) != 'Mn')
+    claves = ['quien es pablo','quien es pablo gutierrez','sobre pablo','hablame de pablo',
+              'a que se dedica pablo','que hace pablo','de quien es la wiki','de quien es esta wiki',
+              'quien hizo la wiki','quien hizo esta wiki','quien es el autor','quien esta detras de la wiki',
+              'a que te dedicas','presentate','hablame de ti','sobre ti']
+    return any(k in q for k in claves)
+
+def _respuesta_identidad():
+    p = Profile.get()
+    if not p:
+        return None
+    nombre = (getattr(p, 'nombre', '') or 'Pablo Gutierrez Gracia').strip()
+    cargo = (getattr(p, 'cargo', '') or '').strip()
+    empresa = (getattr(p, 'empresa', '') or '').strip()
+    desc = (getattr(p, 'descripcion', '') or '').strip()
+    t = '[[verde]]' + nombre + '[[/]]'
+    if cargo and empresa:
+        t += ' es ' + cargo + ' en ' + empresa + '.'
+    elif cargo:
+        t += ' es ' + cargo + '.'
+    else:
+        t += '.'
+    if desc:
+        t += ' ' + desc
+    t += '\n\n[[gris]]Escribe[[/]] [[amarillo]]stack[[/]] [[gris]]para ver con que tecnologias trabaja, o[[/]] [[amarillo]]contact[[/]] [[gris]]para su contacto.[[/]]'
+    return t
+
+
 def _contexto_ask(pregunta, request):
     relevantes = _buscar_semantico(pregunta, 4)
     _bloques = []
@@ -378,6 +408,7 @@ def _contexto_ask(pregunta, request):
         "Eres el asistente del wiki tecnico de Pablo Gutierrez Gracia (administrador de sistemas). "
         "Respondes SIEMPRE en espanol, de forma breve y clara (maximo 5 frases). "
         "IMPORTANTE: solo respondes sobre Pablo Gutierrez, su wiki y temas de administracion de sistemas, redes, virtualizacion, DevOps o tecnologia. "
+        "Las preguntas sobre quien es Pablo, a que se dedica, su experiencia o las tecnologias que domina SIEMPRE estan dentro de tema: respondelas usando PERFIL, CONTACTO y TECNOLOGIAS, nunca digas que no conoces a Pablo. "
         "Si te preguntan cualquier otra cosa (historia, geografia, deportes, cultura general, cocina, famosos, etc.), NO contestes a la pregunta: responde amablemente que solo puedes ayudar con la wiki de Pablo y temas de sistemas, y sugiere escribir help. "
         "Para procedimientos o temas tecnicos usa el CONTENIDO RELEVANTE. "
         "Para que articulos hay, cual es el mas reciente o el ultimo, o fechas de publicacion, usa la lista ULTIMOS ARTICULOS (ya esta ordenada del mas nuevo al mas antiguo, con su fecha). "
@@ -575,6 +606,10 @@ def terminal_ask(request):
     except Exception:
         pass
 
+    if _pregunta_identidad(pregunta):
+        _ident = _respuesta_identidad()
+        if _ident:
+            return _stream_texto(_ident)
     system, art_rel = _contexto_ask(pregunta, request)
     link = ("\n\n[[gris]]Leer:[[/]] /article/" + art_rel.slug + "/") if art_rel else ""
 
