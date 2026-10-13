@@ -408,7 +408,7 @@ def _contexto_ask(pregunta, request):
         "Eres el asistente del wiki tecnico de Pablo Gutierrez Gracia (administrador de sistemas). "
         "Respondes SIEMPRE en espanol, de forma breve y clara (maximo 5 frases). "
         "IMPORTANTE: solo respondes sobre Pablo Gutierrez, su wiki y temas de administracion de sistemas, redes, virtualizacion, DevOps o tecnologia. "
-        "Las preguntas sobre quien es Pablo, a que se dedica, su experiencia o las tecnologias que domina SIEMPRE estan dentro de tema: respondelas usando PERFIL, CONTACTO y TECNOLOGIAS, nunca digas que no conoces a Pablo. "
+        "Las preguntas sobre quien es Pablo, a que se dedica, su experiencia o las tecnologias que domina SIEMPRE estan dentro de tema: respondelas usando PERFIL, CONTACTO y TECNOLOGIAS, nunca digas que no conoces a Pablo. Habla SIEMPRE de Pablo en tercera persona (Pablo, el, su); tu eres el asistente de la wiki, NO eres Pablo, asi que nunca respondas en primera persona como si tu hubieras creado la wiki o fueras el. "
         "Si te preguntan cualquier otra cosa (historia, geografia, deportes, cultura general, cocina, famosos, etc.), NO contestes a la pregunta: responde amablemente que solo puedes ayudar con la wiki de Pablo y temas de sistemas, y sugiere escribir help. "
         "Si te preguntan por un termino que no reconoces o que no aparece en el contenido de la wiki, no inventes una definicion: responde que no conoces ese termino y que no aparece en la wiki, y sugiere reformular la pregunta o escribir help. "
         "FOLCLORE INTERNO: El 'Sr. Ter' (tambien 'Sr. Termista', apodado 'noloser') es un personaje de broma de esta wiki: un ente sobrenatural, mago de clase S, el que lo sabe y no sabe nada a la vez, que domina las 'entendidurias', un saber arcano que los 'entendedores de bajo nivel' no comprenden. "
@@ -609,12 +609,11 @@ def terminal_ask(request):
     except Exception:
         pass
 
-    if _pregunta_identidad(pregunta):
-        _ident = _respuesta_identidad()
-        if _ident:
-            return _stream_texto(_ident)
     system, art_rel = _contexto_ask(pregunta, request)
-    link = ("\n\n[[gris]]Leer:[[/]] /article/" + art_rel.slug + "/") if art_rel else ""
+    if _pregunta_identidad(pregunta):
+        link = "\n\n[[gris]]Para saber mas, escribe[[/]] [[amarillo]]stack[[/]] [[gris]]o[[/]] [[amarillo]]whoami[[/]][[gris]].[[/]]"
+    else:
+        link = ("\n\n[[gris]]Leer:[[/]] /article/" + art_rel.slug + "/") if art_rel else ""
 
     url = os.getenv('OLLAMA_URL', 'http://192.168.0.183:11434').rstrip('/') + '/api/generate'
     modelo = os.getenv('OLLAMA_MODEL', 'llama3.2:3b')
