@@ -8,7 +8,7 @@ from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
 
 from . import terminal
-from .models import Article, Category, HoneypotAttempt
+from .models import Article, Category, HoneypotAttempt, Profile
 from .security import client_ip, reservar_plaza_ia, reservar_turno_ip
 from .templatetags.wiki_tags import get_categories
 
@@ -324,3 +324,62 @@ class IAFueraDeTemaTests(TestCase):
             system, _ = terminal._contexto_ask('que es rclone', None)
         self.assertIn('PROHIBIDO INVENTAR', system)
         self.assertIn('NUNCA pongas palabras en boca de Pablo', system)
+
+
+class IAIdentidadTests(TestCase):
+    """'quien es pablo' siempre presenta a Pablo, aunque el modelo se niegue."""
+
+    IP = '203.0.113.10'
+
+    def setUp(self):
+        cache.clear()
+        Profile.objects.create(nombre='Pablo Gutierrez Gracia', cargo='Responsable de Sistemas',
+                               empresa='Texco Solutions SL', descripcion='Administra la infraestructura.')
+
+    def _ask(self, pregunta, modelo):
+        cuerpo = json.dumps({'response': modelo, 'done': True}).encode()
+
+        class Respuesta:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return cuerpo
+        with mock.patch('urllib.request.urlopen', return_value=Respuesta()) as ollama, \
+                mock.patch.object(terminal, '_contexto_ask') as ctx:
+            resp = self.client.post('/terminal/ask/', data=json.dumps({'command': 'ask ' + pregunta}),
+                                    content_type='application/json', HTTP_X_REAL_IP=self.IP)
+            texto = b''.join(resp.streaming_content).decode()
+            resp.close()
+        ctx.assert_not_called()                          # no usa el prompt general
+        return texto, ollama
+
+    def test_si_el_modelo_se_niega_sale_la_presentacion_fija(self):
+        texto, _ = self._ask('quien es pablo?', 'Lo siento, pero no puedo proporcionar informacion '
+                                                'personal sobre una persona sin conocerla.')
+        self.assertNotIn('Lo siento', texto)
+        self.assertIn('Pablo Gutierrez Gracia', texto)
+        self.assertIn('Responsable de Sistemas', texto)
+
+    def test_si_copia_las_etiquetas_tambien_se_descarta(self):
+        texto, _ = self._ask('que sabes sobre pablo?', 'La informacion proporcionada en PERFIL: es la '
+                                                       'unica fuente disponible sobre el.')
+        self.assertNotIn('PERFIL', texto)
+        self.assertIn('Texco Solutions SL', texto)
+
+    def test_respuesta_buena_del_modelo_se_usa(self):
+        buena = ('Pablo Gutierrez Gracia es Responsable de Sistemas en Texco Solutions SL, '
+                 'donde administra toda la infraestructura.')
+        texto, ollama = self._ask('quien es pablo', buena)
+        self.assertIn(buena, texto)
+        self.assertIn('whoami', texto)
+        self.assertEqual(ollama.call_count, 1)
+
+    def test_si_ollama_falla_tambien_responde(self):
+        with mock.patch('urllib.request.urlopen', side_effect=OSError('caido')):
+            r = self.client.post('/terminal/cmd/', data=json.dumps({'command': 'ask quien es pablo'}),
+                                 content_type='application/json', HTTP_X_REAL_IP=self.IP)
+        self.assertIn('Pablo Gutierrez Gracia', r.json()['output'])
