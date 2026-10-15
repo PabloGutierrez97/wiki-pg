@@ -134,7 +134,9 @@ a:hover { text-decoration-thickness: 2px; }
 .brand-mark {
     display: inline-grid; place-items: center;
     width: 30px; height: 30px;
-    background: var(--ink); color: var(--bg);
+    /* Igual que el favicon en los dos temas */
+    background: #1A2120; color: #5CC9A1;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
     border-radius: var(--radius);
     font-family: var(--font-mono); font-size: 0.8rem; font-weight: 600;
     letter-spacing: -0.02em;
@@ -630,6 +632,20 @@ a:hover { text-decoration-thickness: 2px; }
 
 @media (min-width: 1700px) {
     .home-grid { gap: 5rem; }
+}
+
+/* Artículos en monitores grandes: letra algo mayor, la misma longitud de
+   línea en caracteres y el bloque artículo + índice centrado en el hueco */
+@media (min-width: 1600px) {
+    .article-layout {
+        grid-template-columns: minmax(0, 46rem) 17rem;
+        gap: 6rem;
+        justify-content: center;
+    }
+    .article-head .page-title { font-size: 2.3rem; }
+    .article-meta { font-size: 0.95rem; }
+    .prose { font-size: 1.125rem; }
+    .toc { font-size: 0.95rem; }
 }
 
 @media (max-width: 1180px) {
