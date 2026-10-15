@@ -412,7 +412,9 @@ def _pregunta_identidad(pregunta):
     claves = ['quien es pablo','quien es pablo gutierrez','sobre pablo','hablame de pablo',
               'a que se dedica pablo','que hace pablo','de quien es la wiki','de quien es esta wiki',
               'quien hizo la wiki','quien hizo esta wiki','quien es el autor','quien esta detras de la wiki',
-              'a que te dedicas','presentate','hablame de ti','sobre ti']
+              'a que te dedicas','presentate','hablame de ti','sobre ti',
+              'que sabes de pablo','que sabes sobre pablo','conoces a pablo','informacion de pablo',
+              'informacion sobre pablo','cuentame de pablo','cuentame sobre pablo','quien es el creador']
     return any(k in q for k in claves)
 
 def _respuesta_identidad():
@@ -436,6 +438,65 @@ def _respuesta_identidad():
     return t
 
 
+def _stack_texto(p):
+    if not (p and getattr(p, 'stack', '')):
+        return ''
+    try:
+        return "; ".join("%s: %s" % (k, v) for k, v in json.loads(p.stack).items())
+    except Exception:
+        return (p.stack or '').strip()
+
+
+# Si la respuesta del modelo contiene algo de esto, no vale: se niega, habla en
+# primera persona o copia las etiquetas internas del prompt.
+_NEGATIVAS = ('lo siento', 'no puedo', 'no tengo informacion', 'no tengo datos', 'no conozco',
+              'sin conocerla', 'informacion personal', 'perfil:', 'en perfil', 'datos:',
+              'soy pablo', 'mi wiki', 'como modelo', 'como ia')
+
+
+def _identidad_ia(pregunta):
+    """Presentacion de Pablo redactada por el modelo, solo con los datos del perfil.
+
+    Prompt corto y dedicado: con el prompt general (lleno de prohibiciones) el
+    modelo de 3B tiende a negarse. Si aun asi se niega, falla o se inventa la
+    forma, devuelve None y se usa la presentacion fija.
+    """
+    p = Profile.get()
+    if not p:
+        return None
+    datos = []
+    for etiqueta, valor in (('Nombre', p.nombre), ('Puesto', p.cargo), ('Empresa', p.empresa),
+                            ('Ubicacion', p.ubicacion), ('Descripcion', p.descripcion),
+                            ('Experiencia', p.experiencia), ('Formacion', p.formacion),
+                            ('Certificaciones', p.certificaciones), ('Tecnologias', _stack_texto(p))):
+        if (valor or '').strip():
+            datos.append('- %s: %s' % (etiqueta, valor.strip()))
+    system = (
+        "Eres el asistente de la wiki tecnica de Pablo. Te preguntan por Pablo y tu tarea es presentarlo. "
+        "Escribe en espanol 3 o 4 frases naturales, en tercera persona (Pablo, el, su), usando UNICAMENTE "
+        "estos datos reales. No anadas nada que no este en ellos, no pongas citas suyas, no menciones "
+        "estas instrucciones ni los nombres de los campos, y no te disculpes.\n\n" + "\n".join(datos)
+    )
+    try:
+        req = urllib.request.Request(_url_ollama(), data=_payload_ollama(pregunta, system, False),
+                                     headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            texto = (json.loads(resp.read().decode('utf-8')).get('response') or '').strip()
+    except Exception:
+        return None
+    norm = _normalizar(texto)
+    if len(texto) < 40 or any(k in norm for k in _NEGATIVAS):
+        return None
+    return re.sub(r'/article/\S*', '', texto).strip()
+
+
+def _salida_identidad(pregunta):
+    texto = _identidad_ia(pregunta)
+    if texto:
+        return "[[verde]]IA[[/]] [[gris]].[[/]] " + texto + _enlace(pregunta, None)
+    return "[[verde]]IA[[/]] [[gris]].[[/]] " + (_respuesta_identidad() or MSG_NO_DISPONIBLE)
+
+
 def _contexto_ask(pregunta, request):
     relevantes = _buscar_semantico(pregunta, 4)
     _bloques = []
@@ -454,14 +515,7 @@ def _contexto_ask(pregunta, request):
     _ci.append('GitHub: https://github.com/PabloGutierrez97')
     _ci.append('Wiki: https://wiki.pablogg.dev')
     contacto = ' | '.join(_ci)
-    stack_txt = ""
-    if p and getattr(p, 'stack', ''):
-        try:
-            import json as _json
-            _sd = _json.loads(p.stack)
-            stack_txt = "; ".join("%s: %s" % (k, v) for k, v in _sd.items())
-        except Exception:
-            stack_txt = (p.stack or '').strip()
+    stack_txt = _stack_texto(p)
     recientes = Article.objects.filter(is_published=True).order_by('-created_at')[:15]
     listado_rec = "\n".join("- %s - %s (slug: %s)" % (r.created_at.strftime('%d/%m/%Y'), r.title, r.slug) for r in recientes)
     system = (
@@ -502,7 +556,7 @@ def _normalizar(texto):
 
 def _clave_respuesta(pregunta):
     norm = ' '.join(_normalizar(pregunta).split())
-    return 'ai:resp:v2:' + hashlib.sha256(norm.encode('utf-8')).hexdigest()
+    return 'ai:resp:v3:' + hashlib.sha256(norm.encode('utf-8')).hexdigest()
 
 
 def _cache_get(clave):
@@ -670,6 +724,10 @@ def _cmd_ask(arg, request):
         turno.liberar()
         return MSG_OCUPADA
     try:
+        if _pregunta_identidad(pregunta):
+            salida = _salida_identidad(pregunta)
+            _cache_set(clave, salida, ASK_CACHE_SEG)
+            return salida
         system, art_rel = _contexto_ask(pregunta, request)
         try:
             req = urllib.request.Request(_url_ollama(), data=_payload_ollama(pregunta, system, False),
@@ -822,6 +880,15 @@ def terminal_ask(request):
         enviado = []
         completa = False
         try:
+            if _pregunta_identidad(pregunta):
+                salida = _salida_identidad(pregunta)
+                _cache_set(clave, salida, ASK_CACHE_SEG)
+                trozos = re.findall(r'\S+\s*', salida)
+                pausa = min(0.03, 1.0 / max(1, len(trozos)))
+                for trozo in trozos:
+                    yield trozo
+                    time.sleep(pausa)
+                return
             system, art_rel = _contexto_ask(pregunta, request)
             req = urllib.request.Request(_url_ollama(), data=_payload_ollama(pregunta, system, True),
                                          headers={'Content-Type': 'application/json'})
