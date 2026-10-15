@@ -57,7 +57,7 @@ def article_detail(request, slug):
         'fenced_code',
         'tables',
         'toc',
-        CodeHiliteExtension(linenums=False, css_class='highlight', pygments_formatter=LangHtmlFormatter)
+        CodeHiliteExtension(linenums=False, guess_lang=False, css_class='highlight', pygments_formatter=LangHtmlFormatter)
     ])
     content_html = md.convert(article.content)
     toc = md.toc
