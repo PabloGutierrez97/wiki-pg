@@ -39,6 +39,7 @@ class Article(models.Model):
     tags = models.CharField(max_length=300, blank=True, help_text='Etiquetas separadas por comas. Ej: linux, docker, ansible')
     featured_image = models.ImageField(upload_to='articles/', blank=True, null=True, help_text='Imagen destacada del articulo')
     linkedin_text = models.TextField(blank=True, help_text='Texto personalizado para LinkedIn. Si se deja vacío se usará el título.')
+    linkedin_image = models.ImageField(upload_to='linkedin/', blank=True, null=True, help_text='Imagen para la publicacion de LinkedIn. Si se deja vacia, se publica solo texto.')
     linkedin_scheduled = models.DateTimeField(null=True, blank=True, help_text='Fecha y hora de publicación en LinkedIn')
     linkedin_published = models.BooleanField(default=False)
     linkedin_task_id = models.CharField(max_length=100, blank=True, null=True)

@@ -19,7 +19,7 @@ class ArticleAdmin(admin.ModelAdmin):
         'fields': ('title', 'slug', 'content', 'category', 'author', 'tags', 'is_published', 'publish_scheduled', 'featured_image')
     }),
     ('LinkedIn', {
-        'fields': ('linkedin_text', 'linkedin_scheduled', 'linkedin_published'),
+        'fields': ('linkedin_text', 'linkedin_image', 'linkedin_scheduled', 'linkedin_published'),
         'classes': ('collapse',),
     }),
 )
