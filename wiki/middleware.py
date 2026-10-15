@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.shortcuts import redirect
 from django.urls import reverse
 
@@ -19,7 +20,7 @@ class TwoFactorRequiredMiddleware:
             is_verified = request.user.is_verified() if hasattr(request.user, 'is_verified') else False
             
             # Solo forzar 2FA si intenta acceder al admin
-            if not is_verified and request.path.startswith('/termistawk/'):
+            if not is_verified and request.path.startswith('/' + settings.ADMIN_URL):
                 return redirect(setup_url)
         
         return self.get_response(request)

@@ -1,19 +1,24 @@
+from urllib.parse import urlencode
+
 import requests
 from django.conf import settings
+
+# Sin timeout, una API de LinkedIn colgada dejaría colgado al worker de Celery para siempre.
+TIMEOUT = 30
 
 LINKEDIN_AUTH_URL = 'https://www.linkedin.com/oauth/v2/authorization'
 LINKEDIN_TOKEN_URL = 'https://www.linkedin.com/oauth/v2/accessToken'
 LINKEDIN_API_URL = 'https://api.linkedin.com/v2'
 
-def get_auth_url():
+def get_auth_url(state):
     params = {
         'response_type': 'code',
         'client_id': settings.LINKEDIN_CLIENT_ID,
         'redirect_uri': settings.LINKEDIN_REDIRECT_URI,
         'scope': 'openid profile w_member_social',
+        'state': state,
     }
-    query = '&'.join([f'{k}={v}' for k, v in params.items()])
-    return f'{LINKEDIN_AUTH_URL}?{query}'
+    return f'{LINKEDIN_AUTH_URL}?{urlencode(params)}'
 
 def get_access_token(code):
     response = requests.post(LINKEDIN_TOKEN_URL, data={
@@ -22,12 +27,12 @@ def get_access_token(code):
         'redirect_uri': settings.LINKEDIN_REDIRECT_URI,
         'client_id': settings.LINKEDIN_CLIENT_ID,
         'client_secret': settings.LINKEDIN_CLIENT_SECRET,
-    })
+    }, timeout=TIMEOUT)
     return response.json()
 
 def get_profile(access_token):
     headers = {'Authorization': f'Bearer {access_token}'}
-    response = requests.get(f'{LINKEDIN_API_URL}/userinfo', headers=headers)
+    response = requests.get(f'{LINKEDIN_API_URL}/userinfo', headers=headers, timeout=TIMEOUT)
     return response.json()
 
 def _subir_imagen_linkedin(access_token, author_id, image_path):
@@ -113,6 +118,7 @@ def comment_on_post(access_token, author_id, post_urn, comment_text):
     response = requests.post(
         f'{LINKEDIN_API_URL}/socialActions/{encoded_urn}/comments',
         headers=headers,
-        json=payload
+        json=payload,
+        timeout=TIMEOUT
     )
     return response.json()

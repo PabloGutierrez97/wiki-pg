@@ -1,11 +1,23 @@
+import json
+from unittest import mock
+
+from django.conf import settings
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.core.cache import cache
+from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
 
-from .models import Article, Category
+from . import terminal
+from .models import Article, Category, HoneypotAttempt
+from .security import client_ip, reservar_plaza_ia, reservar_turno_ip
 from .templatetags.wiki_tags import get_categories
 
+# Los tests no tocan el Redis de producción.
+CACHE_TESTS = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+                           'LOCATION': 'wiki-tests'}}
 
+
+@override_settings(CACHES=CACHE_TESTS)
 class FrontendTests(TestCase):
     @classmethod
     def setUpTestData(cls):
@@ -58,3 +70,206 @@ class FrontendTests(TestCase):
         self.assertEqual(cats['redes'].n_articles, 0)       # el borrador no cuenta
         self.assertEqual(cats['redes'].total_articles, 1)   # incluye Mikrotik
         self.assertEqual(cats['redes'].subs[0].n_articles, 1)
+
+
+@override_settings(CACHES=CACHE_TESTS, AI_MAX_CONCURRENT=2)
+class SeguridadTests(TestCase):
+    """Cada test reproduce un abuso real y comprueba que ya no funciona."""
+
+    IP = '203.0.113.7'
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create(username='pablo')
+        cat = Category.objects.create(name='Redes', slug='redes')
+        cls.article = Article.objects.create(
+            title='VPN WireGuard', slug='vpn-wireguard', category=cat, author=cls.user,
+            is_published=True, content='Intro wireguard')
+        cls.staff = User.objects.create_user('admin', password='x', is_staff=True)
+
+    def setUp(self):
+        cache.clear()
+
+    # ------------------------------------------------------------ ayudas --
+
+    def _ask(self, pregunta, ip=IP):
+        resp = self.client.post('/terminal/ask/', data=json.dumps({'command': 'ask ' + pregunta}),
+                                content_type='application/json', HTTP_X_REAL_IP=ip)
+        texto = b''.join(resp.streaming_content).decode()
+        resp.close()
+        return texto
+
+    def _ollama_falso(self, texto='rclone sincroniza'):
+        lineas = [json.dumps({'response': texto, 'done': False}).encode() + b'\n',
+                  json.dumps({'response': '', 'done': True}).encode() + b'\n']
+
+        class Respuesta:
+            def __enter__(self):
+                return iter(lineas)
+
+            def __exit__(self, *a):
+                return False
+        return mock.patch('urllib.request.urlopen', return_value=Respuesta())
+
+    def _sin_rag(self):
+        return mock.patch.object(terminal, '_contexto_ask', return_value=('sys', None))
+
+    def _verificar_2fa(self):
+        from django_otp import DEVICE_ID_SESSION_KEY
+        from django_otp.plugins.otp_static.models import StaticDevice
+        device = StaticDevice.objects.create(user=self.staff, name='test')
+        session = self.client.session
+        session[DEVICE_ID_SESSION_KEY] = device.persistent_id
+        session.save()
+
+    def _plazas_libres(self):
+        plazas = [reservar_plaza_ia(), reservar_plaza_ia()]
+        libres = all(plazas)
+        for p in plazas:
+            if p:
+                p.liberar()
+        return libres
+
+    # ----------------------------------------------------------- LinkedIn --
+
+    def test_linkedin_y_subidas_ocultas_para_anonimos(self):
+        casos = [('get', '/linkedin/auth/'),
+                 ('get', '/linkedin/callback/?code=x&state=y'),
+                 ('post', '/linkedin/post/%d/' % self.article.pk),
+                 ('post', '/linkedin/generate/%d/' % self.article.pk),
+                 ('post', '/mdeditor/uploads/')]
+        for metodo, url in casos:
+            with self.subTest(url=url):
+                self.assertEqual(getattr(self.client, metodo)(url).status_code, 404)
+
+    def test_linkedin_exige_staff_con_2fa(self):
+        self.client.force_login(self.staff)
+        self.assertEqual(self.client.get('/linkedin/auth/').status_code, 404)
+        self._verificar_2fa()
+        r = self.client.get('/linkedin/auth/')
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('state=', r['Location'])
+        self.assertTrue(self.client.session['linkedin_oauth_state'])
+
+    def test_callback_rechaza_un_state_ajeno(self):
+        self.client.force_login(self.staff)
+        self._verificar_2fa()
+        with mock.patch('wiki.linkedin.get_access_token') as token:
+            r = self.client.get('/linkedin/callback/?code=abc&state=falso')
+        self.assertEqual(r.status_code, 302)
+        token.assert_not_called()
+
+    def test_admin_real_sale_de_settings(self):
+        self.assertEqual(reverse('admin:index'), '/' + settings.ADMIN_URL)
+
+    # ------------------------------------------------------------ IP real --
+
+    def test_ip_real_ignora_cabeceras_falsificables(self):
+        from axes.helpers import get_client_ip_address
+        rf = RequestFactory()
+        req = rf.get('/', HTTP_X_REAL_IP='203.0.113.5',
+                     HTTP_X_FORWARDED_FOR='1.2.3.4', HTTP_CF_CONNECTING_IP='5.6.7.8')
+        self.assertEqual(client_ip(req), '203.0.113.5')
+        self.assertEqual(get_client_ip_address(req), '203.0.113.5')   # axes usa la misma
+        self.assertEqual(client_ip(rf.get('/', HTTP_X_REAL_IP='no-es-una-ip')), '127.0.0.1')
+
+    def test_honeypot_limita_los_registros_por_ip(self):
+        for _ in range(25):
+            self.client.post('/admin/', {'username': 'root', 'password': 'x'},
+                             HTTP_X_REAL_IP='198.51.100.9')
+        self.assertEqual(HoneypotAttempt.objects.count(), 20)
+
+    # ---------------------------------------------------------- busqueda --
+
+    def test_busqueda_acotada_y_con_limite_por_visitante(self):
+        r = self.client.get('/search/', {'q': 'w' * 500}, HTTP_X_REAL_IP='192.0.2.1')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.context['query']), 100)
+        for _ in range(29):
+            self.client.get('/search/', {'q': 'wireguard'}, HTTP_X_REAL_IP='192.0.2.1')
+        r = self.client.get('/search/', {'q': 'wireguard'}, HTTP_X_REAL_IP='192.0.2.1')
+        self.assertEqual(r.status_code, 429)
+        r = self.client.get('/search/', {'q': 'wireguard'}, HTTP_X_REAL_IP='192.0.2.2')
+        self.assertContains(r, 'VPN WireGuard')
+
+    def test_articulo_cacheado_se_actualiza_al_editar(self):
+        url = reverse('wiki:article_detail', args=['vpn-wireguard'])
+        self.assertContains(self.client.get(url), 'Intro wireguard')
+        self.article.content = 'Texto nuevo'
+        self.article.save()
+        self.assertContains(self.client.get(url), 'Texto nuevo')
+
+    # ------------------------------------------------------------ terminal --
+
+    def test_terminal_rechaza_cuerpos_grandes(self):
+        r = self.client.post('/terminal/cmd/', data=json.dumps({'command': 'help', 'x': 'a' * 10000}),
+                             content_type='application/json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_terminal_limita_los_comandos(self):
+        for _ in range(60):
+            self.client.post('/terminal/cmd/', data=json.dumps({'command': 'date'}),
+                             content_type='application/json', HTTP_X_REAL_IP='192.0.2.50')
+        r = self.client.post('/terminal/cmd/', data=json.dumps({'command': 'date'}),
+                             content_type='application/json', HTTP_X_REAL_IP='192.0.2.50')
+        self.assertEqual(r.status_code, 429)
+
+    # ------------------------------------------------------------------ IA --
+
+    def test_ask_limita_el_ritmo_tambien_en_respuestas_fijas(self):
+        for _ in range(5):
+            self.assertIn('Ollama', self._ask('como funcionas'))
+        self.assertIn('Vas muy rapido', self._ask('como funcionas'))
+
+    def test_ask_con_plazas_llenas_avisa_sin_llamar_a_ollama(self):
+        ocupadas = [reservar_plaza_ia(), reservar_plaza_ia()]
+        self.assertTrue(all(ocupadas))
+        with mock.patch.object(terminal, '_contexto_ask') as ctx, \
+                mock.patch('urllib.request.urlopen') as ollama:
+            texto = self._ask('que es rclone')
+        self.assertIn('atendiendo a otras personas', texto)
+        ctx.assert_not_called()
+        ollama.assert_not_called()
+        for p in ocupadas:
+            p.liberar()
+        self.assertIsNotNone(reservar_turno_ip(self.IP))   # su turno no quedó bloqueado
+
+    def test_ask_una_pregunta_a_la_vez_por_visitante(self):
+        reservar_turno_ip(self.IP)                       # otra pestaña ya está preguntando
+        self.assertIn('pregunta en curso', self._ask('que es rclone'))
+        with self._sin_rag(), self._ollama_falso():
+            self.assertIn('rclone sincroniza', self._ask('que es rclone', ip='203.0.113.8'))
+
+    def test_ask_libera_plazas_y_cachea_la_respuesta(self):
+        with self._sin_rag(), self._ollama_falso() as ollama:
+            primera = self._ask('que es rclone')
+            segunda = self._ask('Que es RCLONE')         # misma pregunta normalizada
+        self.assertIn('rclone sincroniza', primera)
+        self.assertEqual(primera, segunda)
+        self.assertEqual(ollama.call_count, 1)           # la segunda salió de la caché
+        self.assertTrue(self._plazas_libres())
+        self.assertIsNotNone(reservar_turno_ip(self.IP))
+
+    def test_ask_libera_si_el_visitante_cierra_antes_de_leer(self):
+        with self._sin_rag(), self._ollama_falso():
+            resp = self.client.post('/terminal/ask/', data=json.dumps({'command': 'ask que es rclone'}),
+                                    content_type='application/json', HTTP_X_REAL_IP=self.IP)
+            resp.close()                                 # sin leer ni un byte
+        self.assertTrue(self._plazas_libres())
+        self.assertIsNotNone(reservar_turno_ip(self.IP))
+
+    def test_ask_libera_y_no_cachea_si_ollama_falla(self):
+        with self._sin_rag(), mock.patch('urllib.request.urlopen', side_effect=OSError('caido')):
+            self.assertIn('no esta disponible', self._ask('que es rclone'))
+        self.assertTrue(self._plazas_libres())
+        self.assertIsNone(cache.get(terminal._clave_respuesta('que es rclone')))
+
+    def test_ask_por_cmd_tiene_las_mismas_puertas(self):
+        ocupadas = [reservar_plaza_ia(), reservar_plaza_ia()]
+        with mock.patch('urllib.request.urlopen') as ollama:
+            r = self.client.post('/terminal/cmd/', data=json.dumps({'command': 'ask que es rclone'}),
+                                 content_type='application/json', HTTP_X_REAL_IP=self.IP)
+        self.assertIn('atendiendo a otras personas', r.json()['output'])
+        ollama.assert_not_called()
+        for p in ocupadas:
+            p.liberar()

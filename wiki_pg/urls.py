@@ -22,6 +22,8 @@ from django.conf import settings
 from django.conf.urls.static import static
 from wiki.sitemaps import ArticleSitemap, CategorySitemap, StaticSitemap
 from two_factor.urls import urlpatterns as tf_urls
+from mdeditor.views import UploadView
+from wiki.security import staff_verificado
 
 sitemaps = {
     'articles': ArticleSitemap,
@@ -31,9 +33,11 @@ sitemaps = {
 
 urlpatterns = [
     path('', include(tf_urls)),
-    path('termistawk/', admin.site.urls),
+    path(settings.ADMIN_URL, admin.site.urls),
     path('admin/', include('wiki.urls_honeypot')),
-    path('mdeditor/', include('mdeditor.urls')),
+    # La subida de imágenes del editor era anónima y sin CSRF (django-mdeditor):
+    # ahora solo para staff con 2FA. Mismo nombre de URL que usa el editor.
+    path('mdeditor/uploads/', staff_verificado(UploadView.as_view()), name='uploads'),
     path('sitemap.xml', sitemap, {'sitemaps': sitemaps}, name='django.contrib.sitemaps.views.sitemap'),
     path('robots.txt', TemplateView.as_view(template_name='robots.txt', content_type='text/plain')),
     path('', include('wiki.urls')),
