@@ -1,41 +1,36 @@
 {% extends 'wiki/base.html' %}
 
 {% block title %}{{ category.name }} - Wiki PG{% endblock %}
+{% block description %}{% if category.description %}{{ category.description }}{% else %}Artículos de {{ category.name }} en la wiki técnica de Pablo Gutiérrez Gracia.{% endif %}{% endblock %}
+
+{% block path %}
+{% if category.parent %}<li><a href="{% url 'wiki:category_detail' category.parent.slug %}">{{ category.parent.slug }}</a></li>{% endif %}
+<li><span aria-current="page">{{ category.slug }}</span></li>
+{% endblock %}
 
 {% block content %}
-<div class="breadcrumb">
-    <a href="/">Inicio</a> &rsaquo;
-    {% if category.parent %}
-    <a href="{% url 'wiki:category_detail' category.parent.slug %}">{{ category.parent.name }}</a> &rsaquo;
+<header class="page-head">
+    <h1 class="page-title"><i class="{{ category.icon|default:'fa-solid fa-folder' }}" aria-hidden="true"></i>{{ category.name }}</h1>
+    {% if category.description %}<p class="page-lede">{{ category.description }}</p>{% endif %}
+
+    {% if category.subcategories.all %}
+    <nav class="chip-row" aria-label="Subcategorías">
+        {% for sub in category.subcategories.all %}
+        <a href="{% url 'wiki:category_detail' sub.slug %}" class="chip">{{ sub.name }}</a>
+        {% endfor %}
+    </nav>
     {% endif %}
-    <span>{{ category.name }}</span>
-</div>
+</header>
 
-<div class="page-title"><i class="{{ category.icon|default:'fa-solid fa-folder' }}"></i> {{ category.name }}</div>
-<p class="page-subtitle">{{ category.description }}</p>
-
-{% if category.subcategories.all %}
-<div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 2rem;">
-    {% for sub in category.subcategories.all %}
-    <a href="{% url 'wiki:category_detail' sub.slug %}"
-        style="display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.35rem 0.85rem; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 20px; font-size: 0.85rem; color: var(--text-secondary); text-decoration: none;">
-        📄 {{ sub.name }}
-    </a>
-    {% endfor %}
+{% if articles %}
+<p class="result-count">{{ articles|length }} artículo{{ articles|length|pluralize }}</p>
+<ol class="entry-list">
+    {% for article in articles %}{% include 'wiki/_entry.html' %}{% endfor %}
+</ol>
+{% else %}
+<div class="empty">
+    <p><strong>Aún no hay artículos en {{ category.name }}.</strong></p>
+    {% if category.subcategories.all %}<p>Echa un vistazo a sus subcategorías, justo encima.</p>{% else %}<p>Mientras tanto, prueba con el <a href="{% url 'wiki:search' %}">buscador</a> o vuelve al <a href="/">inicio</a>.</p>{% endif %}
 </div>
 {% endif %}
-
-{% for article in articles %}
-<div class="card">
-    <h3><a href="{% url 'wiki:article_detail' article.slug %}">{{ article.title }}</a></h3>
-    <div class="card-meta">{{ article.created_at|date:"d/m/Y" }} &middot; {{ article.author }}</div>
-    <p class="card-summary">{{ article.summary }}...</p>
-</div>
-{% empty %}
-<p style="color: var(--text-muted);">No hay articulos en esta categoria todavia.</p>
-{% endfor %}
-
-<a href="/" class="btn-back">
-    <i class="fa-solid fa-arrow-left"></i> Volver al inicio
-</a>
 {% endblock %}

@@ -4,12 +4,27 @@ from django.utils.html import strip_tags
 from .models import Category, Article
 import markdown
 from markdown.extensions.codehilite import CodeHiliteExtension
+from pygments.formatters import HtmlFormatter
+
+
+class LangHtmlFormatter(HtmlFormatter):
+    """Añade class="language-xxx" al <code> para que la interfaz muestre el lenguaje."""
+
+    def __init__(self, lang_str='', **options):
+        super().__init__(**options)
+        self.lang_str = lang_str
+
+    def _wrap_code(self, source):
+        yield 0, f'<code class="{self.lang_str}">' if self.lang_str else '<code>'
+        yield from source
+        yield 0, '</code>'
 from django.db import models
 
 def home(request):
     from django.utils import timezone
-    categories = Category.objects.filter(parent=None)
-    recent_articles = Article.objects.filter(is_published=True)[:5]
+    from .templatetags.wiki_tags import get_categories
+    categories = get_categories()
+    recent_articles = Article.objects.filter(is_published=True).select_related('category')[:6]
     
     # Stats
     total_articles = Article.objects.filter(is_published=True).count()
@@ -42,7 +57,7 @@ def article_detail(request, slug):
         'fenced_code',
         'tables',
         'toc',
-        CodeHiliteExtension(linenums=False, css_class='highlight')
+        CodeHiliteExtension(linenums=False, css_class='highlight', pygments_formatter=LangHtmlFormatter)
     ])
     content_html = md.convert(article.content)
     toc = md.toc
