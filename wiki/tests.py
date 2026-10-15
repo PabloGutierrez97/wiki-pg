@@ -273,3 +273,54 @@ class SeguridadTests(TestCase):
         ollama.assert_not_called()
         for p in ocupadas:
             p.liberar()
+
+
+class IAFueraDeTemaTests(TestCase):
+    """La IA no escribe contenido ni se inventa cosas de Pablo (caso real: 'gachas manchegas')."""
+
+    IP = '203.0.113.9'
+
+    def setUp(self):
+        cache.clear()
+
+    def _ask(self, pregunta):
+        resp = self.client.post('/terminal/ask/', data=json.dumps({'command': 'ask ' + pregunta}),
+                                content_type='application/json', HTTP_X_REAL_IP=self.IP)
+        texto = b''.join(resp.streaming_content).decode()
+        resp.close()
+        return texto
+
+    def test_encargos_y_temas_ajenos_no_llegan_al_modelo(self):
+        preguntas = [
+            'Escribe un artículo sobre las gachas manchegas',
+            'que receta de gachas tiene pablo',
+            'inventate que opina pablo de proxmox',
+            'cuentame una historia',
+        ]
+        for pregunta in preguntas:
+            cache.clear()
+            with mock.patch.object(terminal, '_contexto_ask') as ctx, \
+                    mock.patch('urllib.request.urlopen') as ollama:
+                texto = self._ask(pregunta)
+            self.assertIn('Solo puedo ayudarte', texto, pregunta)
+            ctx.assert_not_called()
+            ollama.assert_not_called()
+
+    def test_preguntas_validas_siguen_pasando(self):
+        for pregunta in ['que es rclone', 'dame un articulo de rclone', 'quien es pablo',
+                         'cuentame una historia del sr termista', 'receta para desplegar con docker',
+                         'imagina que se cae el servidor, que hago', 'tienes algo de transformacion digital']:
+            self.assertFalse(terminal._fuera_de_tema(pregunta), pregunta)
+
+    def test_por_cmd_tambien_se_filtra(self):
+        with mock.patch('urllib.request.urlopen') as ollama:
+            r = self.client.post('/terminal/cmd/', data=json.dumps({'command': 'ask receta de paella'}),
+                                 content_type='application/json', HTTP_X_REAL_IP=self.IP)
+        self.assertIn('Solo puedo ayudarte', r.json()['output'])
+        ollama.assert_not_called()
+
+    def test_el_prompt_prohibe_inventar_y_citar_a_pablo(self):
+        with mock.patch.object(terminal, '_buscar_semantico', return_value=[]):
+            system, _ = terminal._contexto_ask('que es rclone', None)
+        self.assertIn('PROHIBIDO INVENTAR', system)
+        self.assertIn('NUNCA pongas palabras en boca de Pablo', system)

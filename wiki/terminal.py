@@ -35,6 +35,11 @@ MSG_EN_CURSO = "[[amarillo]]Ya tienes una pregunta en curso.[[/]] Espera a que t
 MSG_OCUPADA = ("[[amarillo]]La IA esta atendiendo a otras personas ahora mismo.[[/]] "
                "Vuelve a preguntar en unos segundos.")
 MSG_NO_DISPONIBLE = "[[rojo]]La IA no esta disponible ahora mismo.[[/]] Intentalo de nuevo en un momento."
+MSG_FUERA_DE_TEMA = ("[[verde]]IA[[/]] [[gris]].[[/]] Solo puedo ayudarte con la wiki de Pablo y con temas de "
+                     "sistemas, redes, virtualizacion y DevOps. No escribo articulos, historias ni recetas, "
+                     "y no invento nada sobre Pablo.\n\n"
+                     "[[gris]]Prueba con[[/]] [[amarillo]]ls[[/]][[gris]],[[/]] [[amarillo]]buscar <tema>[[/]] "
+                     "[[gris]]o[[/]] [[amarillo]]help[[/]][[gris]].[[/]]")
 
 
 def _cmd_help():
@@ -463,8 +468,10 @@ def _contexto_ask(pregunta, request):
         "Eres el asistente del wiki tecnico de Pablo Gutierrez Gracia (administrador de sistemas). "
         "Respondes SIEMPRE en espanol, de forma breve y clara (maximo 5 frases). "
         "IMPORTANTE: solo respondes sobre Pablo Gutierrez, su wiki y temas de administracion de sistemas, redes, virtualizacion, DevOps o tecnologia. "
-        "Las preguntas sobre quien es Pablo, a que se dedica, su experiencia o las tecnologias que domina SIEMPRE estan dentro de tema: respondelas usando PERFIL, CONTACTO y TECNOLOGIAS, nunca digas que no conoces a Pablo. Habla SIEMPRE de Pablo en tercera persona (Pablo, el, su); tu eres el asistente de la wiki, NO eres Pablo, asi que nunca respondas en primera persona como si tu hubieras creado la wiki o fueras el. "
+        "Las preguntas sobre quien es Pablo, a que se dedica, su experiencia o las tecnologias que domina estan dentro de tema: respondelas SOLO con lo que ponga en PERFIL, CONTACTO y TECNOLOGIAS, nunca digas que no conoces a Pablo. Mencionar a Pablo NO convierte en valida una pregunta sobre otro tema: si preguntan que opina, que cocina, que receta tiene o cualquier cosa de Pablo que no aparezca en esos datos, di que eso no esta en la wiki. Habla SIEMPRE de Pablo en tercera persona (Pablo, el, su); tu eres el asistente de la wiki, NO eres Pablo, asi que nunca respondas en primera persona como si tu hubieras creado la wiki o fueras el. "
         "Si te preguntan cualquier otra cosa (historia, geografia, deportes, cultura general, cocina, famosos, etc.), NO contestes a la pregunta: responde amablemente que solo puedes ayudar con la wiki de Pablo y temas de sistemas, y sugiere escribir help. "
+        "PROHIBIDO INVENTAR: nunca escribas articulos, historias, recetas, poemas ni textos nuevos; tu solo respondes preguntas. Los unicos articulos que existen son los de ULTIMOS ARTICULOS y CONTENIDO RELEVANTE: nunca menciones, describas ni resumas un articulo que no aparezca ahi, y si te preguntan por uno que no esta, di que la wiki no tiene ningun articulo sobre eso. "
+        "NUNCA pongas palabras en boca de Pablo: no escribas citas suyas, ni frases como 'dice Pablo', 'explica Pablo' o 'segun Pablo', ni le atribuyas opiniones, gustos, recuerdos o experiencias que no aparezcan literalmente en PERFIL. "
         "Si te preguntan por un termino que no reconoces o que no aparece en el contenido de la wiki, no inventes una definicion: responde que no conoces ese termino y que no aparece en la wiki, y sugiere reformular la pregunta o escribir help. "
         "FOLCLORE INTERNO: El 'Sr. Ter' (tambien 'Sr. Termista', apodado 'noloser') es un personaje de broma de esta wiki: un ente sobrenatural, mago de clase S, el que lo sabe y no sabe nada a la vez, que domina las 'entendidurias', un saber arcano que los 'entendedores de bajo nivel' no comprenden. "
         "Tu NO eres el Sr. Ter: eres el asistente de la wiki. Menciona al Sr. Ter, al termista o las entendidurias UNICAMENTE si la pregunta del usuario trata de forma explicita sobre ellos, y en ese caso responde con humor, en tono epico y misterioso, inventando detalles coherentes y variando cada vez. Para CUALQUIER otra pregunta ignora por completo este folclore: responde de forma normal y tecnica, sin personaje, sin tono epico y sin mencionar al Sr. Ter. "
@@ -495,7 +502,7 @@ def _normalizar(texto):
 
 def _clave_respuesta(pregunta):
     norm = ' '.join(_normalizar(pregunta).split())
-    return 'ai:resp:' + hashlib.sha256(norm.encode('utf-8')).hexdigest()
+    return 'ai:resp:v2:' + hashlib.sha256(norm.encode('utf-8')).hexdigest()
 
 
 def _cache_get(clave):
@@ -557,6 +564,61 @@ def _respuesta_determinista(pregunta):
     return None
 
 
+# --- Filtro de temas: se aplica ANTES de llamar al modelo ---------------------
+# Un modelo de 3B no respeta de forma fiable "no contestes a esto" en el prompt:
+# si se le pide un articulo o una receta, lo escribe y se inventa citas de Pablo.
+# Estos casos se cortan aqui, sin gastar una plaza de la IA.
+
+_FOLCLORE = ('sr ter', 'senor ter', 'termista', 'entendidur', 'noloser')
+
+# Palabras que hacen que una pregunta sea tecnica aunque contenga otra cosa
+# ("receta para desplegar con docker" si es de la wiki). Se comparan como
+# inicio de palabra, para que "digital" no cuente como "git".
+_RE_TECNICA = re.compile(r'\b(' + '|'.join(re.escape(k) for k in (
+    'linux', 'debian', 'ubuntu', 'windows', 'servidor', 'server', 'docker', 'contenedor', 'kubernetes', 'k8s',
+    'proxmox', 'lxc', 'vm', 'maquina virtual', 'virtualiz', 'red', 'redes', 'vlan', 'dns', 'dhcp', 'ip',
+    'firewall', 'vpn', 'wireguard', 'nginx', 'apache', 'ssh', 'ssl', 'tls', 'certificado', 'backup',
+    'rclone', 'script', 'bash', 'python', 'powershell', 'ansible', 'terraform', 'git', 'django', 'postgres',
+    'mysql', 'base de datos', 'redis', 'celery', 'cloudflare', 'despleg', 'deploy', 'devops', 'monitoriz',
+    'grafana', 'zabbix', 'active directory', 'cron', 'systemd', 'raid', 'zfs', 'ollama', 'kernel', 'cluster',
+)) + ')')
+
+_CREATIVOS = (r'historia|historieta|cuento|relato|poema|poesia|cancion|receta|carta|ensayo|chiste|'
+              r'novela|guion|rap|verso|redaccion|discurso|biografia')
+_ARTICULO = r'(un|una|el|la|otro|otra|algun|alguna|nuevo|nueva)?\s*'
+
+# Encargos creativos: el asistente responde preguntas, no escribe contenido nuevo.
+# "dame un articulo de rclone" es legitimo (recomendar uno que existe); "escribe
+# un articulo" no. Por eso articulo/post solo cuentan con verbos de escribir.
+_RE_CREATIVO = re.compile(
+    r'\b(escribe\w*|escribir|redacta\w*|crea|creame|genera\w*|hazme|haz|elabora\w*|'
+    r'prepara\w*|inventa\w*|compon\w*)\s+(me\s+)?' + _ARTICULO + r'(articulo|post|' + _CREATIVOS + r')s?\b'
+    r'|\b(dame|quiero|cuentame|dime|recitame|cantame)\s+(me\s+)?' + _ARTICULO + r'(' + _CREATIVOS + r')s?\b')
+# Inventar siempre se rechaza; "imagina"/"finge" solo si no hay nada tecnico
+# ("imagina que se cae el servidor..." es una pregunta valida).
+_RE_INVENTAR = re.compile(r'\b(inventa\w*|invent(a|e|ar)\s|haz como si|ponte en el papel)')
+_RE_FICCION = re.compile(r'\b(imagina\w*|finge|fingir|supon que eres)\b')
+
+# Temas que nunca son de la wiki (cocina, recetas, etc.).
+_RE_AJENO = re.compile(
+    r'\b(recetas?|cocina|cocinar|cocino|guisos?|guisar|ingredientes?|hornear|postres?|gastronom\w*|'
+    r'gachas|paella|tortilla|cocido|lentejas|migas|pisto|croquetas?|gazpacho|salmorejo|'
+    r'horoscopo|futbol|pelicula|famos[oa]s?)\b')
+
+
+def _fuera_de_tema(pregunta):
+    """True si la pregunta debe rechazarse sin consultar al modelo."""
+    q = ' ' + ' '.join(_normalizar(pregunta).split()) + ' '
+    if any(k in q for k in _FOLCLORE):
+        return False                    # el Sr. Ter si puede improvisar (es broma de la casa)
+    if _RE_CREATIVO.search(q) or _RE_INVENTAR.search(q):
+        return True
+    tecnica = bool(_RE_TECNICA.search(q))
+    if (_RE_FICCION.search(q) or _RE_AJENO.search(q)) and not tecnica:
+        return True
+    return False
+
+
 def _payload_ollama(pregunta, system, stream):
     return json.dumps({
         "model": os.getenv('OLLAMA_MODEL', 'llama3.2:3b'),
@@ -564,7 +626,7 @@ def _payload_ollama(pregunta, system, stream):
         "system": system,
         "stream": stream,
         "keep_alive": "30m",
-        "options": {"temperature": 0.3, "top_p": 0.9, "repeat_penalty": 1.1, "num_predict": 450}
+        "options": {"temperature": 0.2, "top_p": 0.9, "repeat_penalty": 1.1, "num_predict": 450}
     }).encode('utf-8')
 
 
@@ -593,6 +655,8 @@ def _cmd_ask(arg, request):
     determinista = _respuesta_determinista(pregunta)
     if determinista:
         return determinista
+    if _fuera_de_tema(pregunta):
+        return MSG_FUERA_DE_TEMA
     clave = _clave_respuesta(pregunta)
     guardada = _cache_get(clave)
     if guardada:
@@ -711,7 +775,8 @@ def terminal_ask(request):
 
     Orden de las puertas, de la mas barata a la mas cara:
       1. ritmo por visitante (5/min, 30/h), tambien para las respuestas fijas;
-      2. respuestas deterministas y respuestas ya cacheadas (no tocan Ollama);
+      2. respuestas deterministas, preguntas fuera de tema y respuestas ya
+         cacheadas (no tocan Ollama);
       3. una sola pregunta en curso por visitante, aunque abra muchas pestanas;
       4. una de las AI_MAX_CONCURRENT plazas globales: si estan llenas se avisa
          al momento en vez de hacer cola, asi la IA nunca deja sin workers al
@@ -737,6 +802,8 @@ def terminal_ask(request):
     determinista = _respuesta_determinista(pregunta)
     if determinista:
         return _stream_texto(determinista)
+    if _fuera_de_tema(pregunta):
+        return _stream_texto(MSG_FUERA_DE_TEMA)
 
     clave = _clave_respuesta(pregunta)
     guardada = _cache_get(clave)
