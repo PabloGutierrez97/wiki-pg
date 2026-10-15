@@ -1,28 +1,27 @@
 {% extends 'wiki/base.html' %}
 
 {% block title %}#{{ tag }} - Wiki PG{% endblock %}
+{% block description %}Artículos con la etiqueta {{ tag }} en la wiki técnica de Pablo Gutiérrez Gracia.{% endblock %}
+
+{% block path %}
+<li><a href="{% url 'wiki:search' %}">etiquetas</a></li>
+<li><span aria-current="page">{{ tag }}</span></li>
+{% endblock %}
 
 {% block content %}
-<div class="breadcrumb">
-    <a href="/">Inicio</a> &rsaquo;
-    <span>#{{ tag }}</span>
+<header class="page-head">
+    <h1 class="page-title">#{{ tag }}</h1>
+    <p class="page-lede">{{ articles|length }} artículo{{ articles|length|pluralize }} con esta etiqueta.</p>
+</header>
+
+{% if articles %}
+<ol class="entry-list">
+    {% for article in articles %}{% include 'wiki/_entry.html' with show_category=True %}{% endfor %}
+</ol>
+{% else %}
+<div class="empty">
+    <p><strong>No hay artículos con la etiqueta «{{ tag }}».</strong></p>
+    <p>Puede que la etiqueta se escriba de otra forma. Prueba a <a href="{% url 'wiki:search' %}?q={{ tag|urlencode }}">buscar «{{ tag }}»</a> en todo el texto.</p>
 </div>
-
-<div class="page-title"><i class="fa-solid fa-tag" style="color: var(--accent);"></i> #{{ tag }}</div>
-<p class="page-subtitle">{{ articles.count }} artículo(s) con esta etiqueta</p>
-
-{% for article in articles %}
-<div class="card">
-    <h3><a href="{% url 'wiki:article_detail' article.slug %}">{{ article.title }}</a></h3>
-    <div class="card-meta">
-        <span class="badge">{{ article.category.name }}</span>
-        &nbsp;{{ article.created_at|date:"d/m/Y" }}
-    </div>
-    <p class="card-summary">{{ article.summary }}...</p>
-</div>
-{% empty %}
-<p style="color: var(--text-muted);">No hay artículos con esta etiqueta.</p>
-{% endfor %}
-
-<a href="/" class="btn-back"><i class="fa-solid fa-arrow-left"></i> Volver al inicio</a>
+{% endif %}
 {% endblock %}

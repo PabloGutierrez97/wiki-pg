@@ -1,40 +1,35 @@
 {% extends 'wiki/base.html' %}
 
-{% block title %}Buscar - Wiki PG{% endblock %}
+{% block title %}{% if query %}«{{ query }}» - Buscar - Wiki PG{% else %}Buscar - Wiki PG{% endif %}{% endblock %}
+
+{% block path %}
+<li><span aria-current="page">buscar</span></li>
+{% endblock %}
 
 {% block content %}
-<div class="page-title">Buscar</div>
-
-<form method="get" action="{% url 'wiki:search' %}" style="margin-bottom: 2rem;">
-    <div style="display: flex; gap: 0.5rem;">
-        <input type="text" name="q" value="{{ query }}" placeholder="Buscar articulos..."
-            class="search-input" style="flex: 1; width: auto;">
-        <button type="submit" class="search-btn">Buscar</button>
-    </div>
-</form>
+<header class="page-head">
+    <h1 class="page-title">Buscar</h1>
+    <form method="get" action="{% url 'wiki:search' %}" class="search search-lg" role="search">
+        <label class="search-field">
+            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            <span class="visually-hidden">Buscar en la wiki</span>
+            <input type="search" name="q" value="{{ query }}" class="search-input search-page-input" placeholder="Título, comando, etiqueta o categoría" autocomplete="off" {% if not query %}autofocus{% endif %}>
+            <button type="submit" class="search-submit">Buscar</button>
+        </label>
+    </form>
+</header>
 
 {% if query %}
-<p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1.5rem;">
     {% if results %}
-        {{ results.count }} resultado(s) para "{{ query }}"
+    <p class="result-count" role="status">{{ results|length }} resultado{{ results|length|pluralize }} para «{{ query }}»</p>
+    <ol class="entry-list">
+        {% for article in results %}{% include 'wiki/_entry.html' with show_category=True %}{% endfor %}
+    </ol>
     {% else %}
-        No se encontraron resultados para "{{ query }}"
-    {% endif %}
-</p>
-
-{% for article in results %}
-<div class="card">
-    <h3><a href="{% url 'wiki:article_detail' article.slug %}">{{ article.title }}</a></h3>
-    <div class="card-meta">
-        <span class="badge">{{ article.category.name }}</span>
-        &nbsp;{{ article.created_at|date:"d/m/Y" }}
+    <div class="empty" role="status">
+        <p><strong>Ningún artículo contiene «{{ query }}».</strong></p>
+        <p>Prueba con una sola palabra clave, el nombre del servicio (por ejemplo «zabbix» o «gpo») o el mensaje de error sin rutas ni números.</p>
     </div>
-    <p class="card-summary">{{ article.summary }}...</p>
-</div>
-{% endfor %}
+    {% endif %}
 {% endif %}
-
-<a href="/" class="btn-back">
-    <i class="fa-solid fa-arrow-left"></i> Volver al inicio
-</a>
 {% endblock %}

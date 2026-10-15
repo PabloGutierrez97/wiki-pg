@@ -1,0 +1,8 @@
+<li class="entry">
+    <h2 class="entry-title"><a href="{% url 'wiki:article_detail' article.slug %}">{{ article.title }}</a></h2>
+    <div class="entry-meta">
+        {% if show_category %}<a href="{% url 'wiki:category_detail' article.category.slug %}">{{ article.category.name }}</a>{% endif %}
+        <time datetime="{{ article.created_at|date:'c' }}">{{ article.created_at|date:"d/m/Y" }}</time>
+    </div>
+    {% if article.summary %}<p class="entry-summary">{{ article.summary|truncatechars:190 }}</p>{% endif %}
+</li>
