@@ -20,7 +20,8 @@ def publish_to_linkedin_task(article_id):
 Lee el artículo completo aquí: https://wiki.pablogg.dev/article/{article.slug}/
 #sysadmin #linux #infraestructura #tecnologia"""
 
-        result = post_to_linkedin(token.access_token, token.author_id, text)
+        image_path = article.linkedin_image.path if article.linkedin_image else None
+        result = post_to_linkedin(token.access_token, token.author_id, text, image_path=image_path)
 
         # Marcar como publicado
         article.linkedin_published = True

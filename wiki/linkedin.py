@@ -30,22 +30,56 @@ def get_profile(access_token):
     response = requests.get(f'{LINKEDIN_API_URL}/userinfo', headers=headers)
     return response.json()
 
-def post_to_linkedin(access_token, author_id, text):
+def _subir_imagen_linkedin(access_token, author_id, image_path):
+    """Registra y sube una imagen a LinkedIn; devuelve el asset URN."""
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json',
+        'X-Restli-Protocol-Version': '2.0.0',
+    }
+    register = {
+        'registerUploadRequest': {
+            'recipes': ['urn:li:digitalmediaRecipe:feedshare-image'],
+            'owner': f'urn:li:person:{author_id}',
+            'serviceRelationships': [
+                {'relationshipType': 'OWNER', 'identifier': 'urn:li:userGeneratedContent'}
+            ],
+        }
+    }
+    r = requests.post(f'{LINKEDIN_API_URL}/assets?action=registerUpload',
+                      headers=headers, json=register, timeout=30)
+    r.raise_for_status()
+    value = r.json()['value']
+    asset = value['asset']
+    upload_url = value['uploadMechanism']['com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest']['uploadUrl']
+    with open(image_path, 'rb') as f:
+        data = f.read()
+    up = requests.post(upload_url,
+                       headers={'Authorization': f'Bearer {access_token}'},
+                       data=data, timeout=60)
+    up.raise_for_status()
+    return asset
+
+
+def post_to_linkedin(access_token, author_id, text, image_path=None):
     headers = {
         'Authorization': f'Bearer {access_token}',
         'Content-Type': 'application/json',
         'X-Restli-Protocol-Version': '2.0.0'
     }
+    share_content = {
+        'shareCommentary': {'text': text},
+        'shareMediaCategory': 'NONE',
+    }
+    if image_path:
+        asset = _subir_imagen_linkedin(access_token, author_id, image_path)
+        share_content['shareMediaCategory'] = 'IMAGE'
+        share_content['media'] = [{'status': 'READY', 'media': asset}]
     payload = {
         'author': f'urn:li:person:{author_id}',
         'lifecycleState': 'PUBLISHED',
         'specificContent': {
-            'com.linkedin.ugc.ShareContent': {
-                'shareCommentary': {
-                    'text': text
-                },
-                'shareMediaCategory': 'NONE'
-            }
+            'com.linkedin.ugc.ShareContent': share_content
         },
         'visibility': {
             'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC'
@@ -54,9 +88,11 @@ def post_to_linkedin(access_token, author_id, text):
     response = requests.post(
         f'{LINKEDIN_API_URL}/ugcPosts',
         headers=headers,
-        json=payload
+        json=payload,
+        timeout=30
     )
     return response.json()
+
 
 def comment_on_post(access_token, author_id, post_urn, comment_text):
     from urllib.parse import quote
