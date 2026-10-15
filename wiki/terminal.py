@@ -466,7 +466,7 @@ def _identidad_ia(pregunta):
         return None
     datos = []
     for etiqueta, valor in (('Nombre', p.nombre), ('Puesto', p.cargo), ('Empresa', p.empresa),
-                            ('Ubicacion', p.ubicacion), ('Descripcion', p.descripcion),
+                            ('Lugar donde vive Pablo (NO es la sede de la empresa)', p.ubicacion), ('Descripcion', p.descripcion),
                             ('Experiencia', p.experiencia), ('Formacion', p.formacion),
                             ('Certificaciones', p.certificaciones), ('Tecnologias', _stack_texto(p))):
         if (valor or '').strip():
