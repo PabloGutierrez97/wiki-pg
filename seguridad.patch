@@ -1,0 +1,1415 @@
+From d185c7b2a2301499e3a9c55371b10956b5f2b0b8 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Pablo=20Guti=C3=A9rrez?= <gutipablo61@gmail.com>
+Date: Thu, 15 Oct 2026 12:49:22 +0200
+Subject: [PATCH] =?UTF-8?q?Seguridad:=20cerrar=20endpoints=20abiertos=20y?=
+ =?UTF-8?q?=20blindar=20la=20IA=20contra=20saturaci=C3=B3n?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Endpoints que estaban abiertos a cualquiera:
+- /linkedin/post/ permitía publicar cualquier texto en el LinkedIn del autor.
+- /linkedin/callback/ permitía sustituir el token de LinkedIn (sin state OAuth).
+- /linkedin/generate/ gastaba la cuota de Gemini y resumía borradores.
+- /mdeditor/uploads/ (django-mdeditor) aceptaba subidas anónimas sin CSRF.
+Ahora todos exigen staff con 2FA (al resto se responde 404) y el OAuth lleva state.
+
+IA del terminal:
+- Hasta AI_MAX_CONCURRENT respuestas a la vez (2 por defecto); si están
+  ocupadas se avisa al momento en vez de hacer cola reteniendo workers.
+- Una sola pregunta en curso por visitante, aunque abra muchas pestañas.
+- Ritmo por visitante (5/min, 30/h) aplicado antes de cualquier trabajo,
+  también a las respuestas fijas; caché de respuestas 15 min.
+- Las plazas se liberan siempre: al terminar, si Ollama falla o si el
+  visitante cierra la pestaña antes de leer nada.
+- Embeddings parseados una vez por proceso en lugar de en cada pregunta.
+- Cuerpos del terminal limitados a 4 KB y comandos a 60/min por IP.
+
+General:
+- Caché compartida en Redis (antes cada worker contaba por su cuenta).
+- IP real del visitante desde X-Real-IP (nginx); axes la usa también, antes
+  veía 127.0.0.1 para todos y 5 fallos de cualquiera bloqueaban el login.
+- La ruta del admin sale de ADMIN_URL (.env): estaba en el repo público.
+- Búsqueda acotada (100 caracteres, 30 resultados, 30/min por IP) y Markdown
+  de artículos y resúmenes cacheado (se invalida al editar).
+- Honeypot con tope de registros por IP y por hora.
+- Timeouts en todas las llamadas a LinkedIn.
+- 17 tests nuevos que reproducen cada abuso.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017zEGxkTHxtUa8tFYfPjs4F
+---
+ wiki/linkedin.py    |  18 +-
+ wiki/middleware.py  |   3 +-
+ wiki/security.py    | 158 +++++++++++++++++
+ wiki/terminal.py    | 402 +++++++++++++++++++++++++++++---------------
+ wiki/tests.py       | 219 +++++++++++++++++++++++-
+ wiki/views.py       | 184 +++++++++++++-------
+ wiki_pg/settings.py |  31 ++++
+ wiki_pg/urls.py     |   8 +-
+ 8 files changed, 819 insertions(+), 204 deletions(-)
+ create mode 100644 wiki/security.py
+
+diff --git a/wiki/linkedin.py b/wiki/linkedin.py
+index 9a8e90c..f2c08e0 100644
+--- a/wiki/linkedin.py
++++ b/wiki/linkedin.py
+@@ -1,19 +1,24 @@
++from urllib.parse import urlencode
++
+ import requests
+ from django.conf import settings
+ 
++# Sin timeout, una API de LinkedIn colgada dejaría colgado al worker de Celery para siempre.
++TIMEOUT = 30
++
+ LINKEDIN_AUTH_URL = 'https://www.linkedin.com/oauth/v2/authorization'
+ LINKEDIN_TOKEN_URL = 'https://www.linkedin.com/oauth/v2/accessToken'
+ LINKEDIN_API_URL = 'https://api.linkedin.com/v2'
+ 
+-def get_auth_url():
++def get_auth_url(state):
+     params = {
+         'response_type': 'code',
+         'client_id': settings.LINKEDIN_CLIENT_ID,
+         'redirect_uri': settings.LINKEDIN_REDIRECT_URI,
+         'scope': 'openid profile w_member_social',
++        'state': state,
+     }
+-    query = '&'.join([f'{k}={v}' for k, v in params.items()])
+-    return f'{LINKEDIN_AUTH_URL}?{query}'
++    return f'{LINKEDIN_AUTH_URL}?{urlencode(params)}'
+ 
+ def get_access_token(code):
+     response = requests.post(LINKEDIN_TOKEN_URL, data={
+@@ -22,12 +27,12 @@ def get_access_token(code):
+         'redirect_uri': settings.LINKEDIN_REDIRECT_URI,
+         'client_id': settings.LINKEDIN_CLIENT_ID,
+         'client_secret': settings.LINKEDIN_CLIENT_SECRET,
+-    })
++    }, timeout=TIMEOUT)
+     return response.json()
+ 
+ def get_profile(access_token):
+     headers = {'Authorization': f'Bearer {access_token}'}
+-    response = requests.get(f'{LINKEDIN_API_URL}/userinfo', headers=headers)
++    response = requests.get(f'{LINKEDIN_API_URL}/userinfo', headers=headers, timeout=TIMEOUT)
+     return response.json()
+ 
+ def _subir_imagen_linkedin(access_token, author_id, image_path):
+@@ -113,6 +118,7 @@ def comment_on_post(access_token, author_id, post_urn, comment_text):
+     response = requests.post(
+         f'{LINKEDIN_API_URL}/socialActions/{encoded_urn}/comments',
+         headers=headers,
+-        json=payload
++        json=payload,
++        timeout=TIMEOUT
+     )
+     return response.json()
+diff --git a/wiki/middleware.py b/wiki/middleware.py
+index 0c889d7..c88da57 100644
+--- a/wiki/middleware.py
++++ b/wiki/middleware.py
+@@ -1,3 +1,4 @@
++from django.conf import settings
+ from django.shortcuts import redirect
+ from django.urls import reverse
+ 
+@@ -19,7 +20,7 @@ class TwoFactorRequiredMiddleware:
+             is_verified = request.user.is_verified() if hasattr(request.user, 'is_verified') else False
+             
+             # Solo forzar 2FA si intenta acceder al admin
+-            if not is_verified and request.path.startswith('/termistawk/'):
++            if not is_verified and request.path.startswith('/' + settings.ADMIN_URL):
+                 return redirect(setup_url)
+         
+         return self.get_response(request)
+diff --git a/wiki/security.py b/wiki/security.py
+new file mode 100644
+index 0000000..f2561b2
+--- /dev/null
++++ b/wiki/security.py
+@@ -0,0 +1,158 @@
++"""Utilidades de seguridad compartidas por toda la wiki.
++
++- client_ip(): la IP real del visitante detrás de Cloudflare + nginx.
++- excede_limite(): contador atómico en Redis (compartido entre workers).
++- Plazas de la IA: limitan cuántas respuestas genera Ollama a la vez, en
++  total y por visitante, para que la IA nunca pueda tumbar el resto del sitio.
++- staff_verificado: protege vistas internas (LinkedIn, subidas del editor).
++"""
++import functools
++import ipaddress
++import uuid
++
++from django.conf import settings
++from django.core.cache import cache
++from django.http import Http404
++
++
++def _ip_valida(valor):
++    try:
++        return str(ipaddress.ip_address((valor or '').strip()))
++    except ValueError:
++        return None
++
++
++def client_ip(request):
++    """IP real del visitante.
++
++    nginx resuelve la IP de Cloudflare (real_ip_header CF-Connecting-IP, solo
++    confiando en 127.0.0.1) y la pasa en X-Real-IP, sobrescribiendo cualquier
++    X-Real-IP que envíe el cliente. Es la única cabecera fiable; X-Forwarded-For
++    y CF-Connecting-IP se pueden falsificar si alguien llega sin pasar por nginx.
++    """
++    for clave in ('HTTP_X_REAL_IP', 'REMOTE_ADDR'):
++        ip = _ip_valida(request.META.get(clave))
++        if ip:
++            return ip
++    return '0.0.0.0'
++
++
++def excede_limite(clave, limite, ventana):
++    """Suma un uso a `clave` y dice si se ha pasado de `limite` en `ventana` segundos.
++
++    Atómico con Redis (add + incr). Si la caché falla no bloquea a nadie: el
++    límite de concurrencia de la IA sí falla cerrado, ver reservar_plaza_ia().
++    """
++    clave = 'rl:' + clave
++    try:
++        cache.add(clave, 0, ventana)
++        usos = cache.incr(clave)
++    except ValueError:
++        # La clave caducó entre add() e incr(): empieza una ventana nueva.
++        cache.set(clave, 1, ventana)
++        usos = 1
++    except Exception:
++        return False
++    return usos > limite
++
++
++# ---------------------------------------------------------------- IA ----
++
++# Si un worker muriera sin liberar su plaza, caduca sola tras este tiempo.
++# Es igual al --timeout de gunicorn: ninguna respuesta puede durar más.
++PLAZA_TTL = 120
++
++
++class Plaza:
++    """Una reserva en Redis que se libera una sola vez, pase lo que pase."""
++
++    def __init__(self, clave, token):
++        self.clave = clave
++        self.token = token
++        self.liberada = False
++
++    def liberar(self):
++        if self.liberada:
++            return
++        self.liberada = True
++        try:
++            if cache.get(self.clave) == self.token:
++                cache.delete(self.clave)
++        except Exception:
++            pass
++
++
++def _reservar(clave):
++    token = uuid.uuid4().hex
++    try:
++        if cache.add(clave, token, PLAZA_TTL):
++            return Plaza(clave, token)
++    except Exception:
++        pass
++    return None
++
++
++def reservar_plaza_ia():
++    """Reserva una de las AI_MAX_CONCURRENT plazas globales, o None si están todas ocupadas.
++
++    Falla cerrado: si Redis no responde, no hay plaza y la IA contesta que está
++    ocupada en vez de quedarse sin límite.
++    """
++    total = max(1, int(getattr(settings, 'AI_MAX_CONCURRENT', 2)))
++    for i in range(total):
++        plaza = _reservar('ai:plaza:%d' % i)
++        if plaza:
++            return plaza
++    return None
++
++
++def reservar_turno_ip(ip):
++    """Una sola pregunta a la vez por visitante (aunque abra muchas pestañas)."""
++    return _reservar('ai:ip:' + ip)
++
++
++class RespuestaLiberable:
++    """Envuelve el generador del streaming para liberar las plazas al terminar.
++
++    Django llama a close() siempre, también si el visitante cierra la pestaña
++    antes de recibir el primer byte; un generador que no ha empezado no
++    ejecutaría su `finally`, por eso la liberación va aquí.
++    """
++
++    def __init__(self, generador, *plazas):
++        self._generador = generador
++        self._plazas = [p for p in plazas if p]
++
++    def __iter__(self):
++        return self
++
++    def __next__(self):
++        try:
++            return next(self._generador)
++        except BaseException:
++            self.close()
++            raise
++
++    def close(self):
++        try:
++            self._generador.close()
++        finally:
++            for plaza in self._plazas:
++                plaza.liberar()
++
++
++# ------------------------------------------------------------- vistas ----
++
++def staff_verificado(vista):
++    """Solo staff con la sesión verificada por 2FA. Al resto se le responde 404.
++
++    El 404 (en vez de redirigir al login) no revela que la ruta existe.
++    """
++    @functools.wraps(vista)
++    def envoltura(request, *args, **kwargs):
++        usuario = request.user
++        verificado = getattr(usuario, 'is_verified', lambda: False)()
++        if not (usuario.is_authenticated and usuario.is_active and usuario.is_staff and verificado):
++            raise Http404()
++        return vista(request, *args, **kwargs)
++    return envoltura
+diff --git a/wiki/terminal.py b/wiki/terminal.py
+index e3881e7..807816b 100644
+--- a/wiki/terminal.py
++++ b/wiki/terminal.py
+@@ -6,10 +6,36 @@ import json
+ import re
+ 
+ from .models import Article, Category, Profile
++import hashlib
++import math
+ import os
++import time
++import unicodedata
+ import urllib.request
++from array import array
+ from django.core.cache import cache
+ 
++from .security import (
++    RespuestaLiberable, client_ip, excede_limite,
++    reservar_plaza_ia, reservar_turno_ip,
++)
++
++# Límites de la IA (por visitante). La concurrencia global va en settings.AI_MAX_CONCURRENT.
++ASK_POR_MINUTO = 5
++ASK_POR_HORA = 30
++# Comandos normales del terminal (ls, cat, tree...): baratos, pero sin límite se pueden encadenar.
++CMD_POR_MINUTO = 60
++# Peticiones del terminal: una pregunta de 300 caracteres cabe de sobra en 4 KB.
++MAX_BODY = 4096
++# Respuestas idénticas se sirven desde caché durante este tiempo.
++ASK_CACHE_SEG = 15 * 60
++
++MSG_RAPIDO = "[[amarillo]]Vas muy rapido.[[/]] Espera un poco antes de volver a preguntar."
++MSG_EN_CURSO = "[[amarillo]]Ya tienes una pregunta en curso.[[/]] Espera a que termine la respuesta."
++MSG_OCUPADA = ("[[amarillo]]La IA esta atendiendo a otras personas ahora mismo.[[/]] "
++               "Vuelve a preguntar en unos segundos.")
++MSG_NO_DISPONIBLE = "[[rojo]]La IA no esta disponible ahora mismo.[[/]] Intentalo de nuevo en un momento."
++
+ 
+ def _cmd_help():
+     lineas = [
+@@ -234,22 +260,23 @@ def _cmd_wikis():
+     return "\n".join(lineas).rstrip()
+ 
+ 
+-def _embed(texto):
++def _embed(texto, timeout=30, intentos=2):
++    """Embedding con bge-m3. Para preguntas en vivo se llama con timeout corto y sin reintentos."""
+     url = os.getenv('OLLAMA_URL', 'http://192.168.0.183:11434').rstrip('/') + '/api/embeddings'
+     modelo = os.getenv('OLLAMA_EMBED_MODEL', 'bge-m3')
+     payload = json.dumps({"model": modelo, "prompt": (texto or '')[:3000], "keep_alive": "5m"}).encode('utf-8')
+-    import time as _time
+-    for _i in range(2):
++    for _i in range(intentos):
+         try:
+             req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
+-            with urllib.request.urlopen(req, timeout=30) as resp:
++            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                 data = json.loads(resp.read().decode('utf-8'))
+             emb = data.get('embedding')
+             if emb:
+                 return emb
+         except Exception:
+             pass
+-        _time.sleep(0.8)
++        if _i + 1 < intentos:
++            time.sleep(0.8)
+     return None
+ 
+ 
+@@ -312,23 +339,51 @@ def _coseno(a, b):
+     return s / (math.sqrt(na) * math.sqrt(nb))
+ 
+ 
++# Vectores de los fragmentos ya parseados, por proceso. Antes se parseaban los
++# ~550 JSON de 1024 números en cada pregunta (CPU pura); ahora solo cuando
++# cambia el índice (nuevo id máximo o distinto número de fragmentos).
++_EMB_MEMO = {'version': None, 'items': []}
++
++
++def _vectores_indexados():
++    from django.db.models import Count, Max
++    from .models import ArticleChunk
++    qs = ArticleChunk.objects.exclude(embedding='')
++    agg = qs.aggregate(maximo=Max('id'), total=Count('id'))
++    version = (agg['maximo'], agg['total'])
++    if _EMB_MEMO['version'] != version:
++        items = []
++        for cid, aid, emb in qs.values_list('id', 'article_id', 'embedding'):
++            try:
++                vec = array('d', json.loads(emb))
++            except Exception:
++                continue
++            norma = math.sqrt(sum(x * x for x in vec))
++            if norma:
++                items.append((cid, aid, vec, norma))
++        _EMB_MEMO['items'] = items
++        _EMB_MEMO['version'] = version
++    return _EMB_MEMO['items']
++
++
+ def _buscar_semantico(pregunta, k=4):
+-    qemb = _embed(pregunta)
++    qemb = _embed(pregunta, timeout=10, intentos=1)
+     if not qemb:
+         return []
+-    import json as _json
++    qnorma = math.sqrt(sum(x * x for x in qemb))
++    if not qnorma:
++        return []
+     from .models import ArticleChunk
+-    res = []
+-    for c in ArticleChunk.objects.exclude(embedding='').select_related('article', 'article__category'):
+-        if not c.article.is_published:
+-            continue
+-        try:
+-            emb = _json.loads(c.embedding)
+-        except Exception:
+-            continue
+-        res.append((c, _coseno(qemb, emb)))
+-    res.sort(key=lambda t: t[1], reverse=True)
+-    return res[:k]
++    publicados = set(Article.objects.filter(is_published=True).values_list('id', flat=True))
++    puntuados = []
++    for cid, aid, vec, norma in _vectores_indexados():
++        if aid in publicados:
++            puntuados.append((sum(a * b for a, b in zip(qemb, vec)) / (qnorma * norma), cid))
++    puntuados.sort(reverse=True)
++    top = puntuados[:k]
++    objs = ArticleChunk.objects.filter(id__in=[cid for _, cid in top]).select_related('article', 'article__category')
++    por_id = {c.id: c for c in objs}
++    return [(por_id[cid], score) for score, cid in top if cid in por_id]
+ 
+ 
+ def _articulo_relevante(pregunta):
+@@ -433,77 +488,164 @@ def _contexto_ask(pregunta, request):
+     return system, art_rel
+ 
+ 
+-def _cmd_ask(arg, request):
+-    pregunta = (arg or '').strip()
+-    if not pregunta:
+-        return "Uso: [[amarillo]]ask <pregunta>[[/]]  (ej: ask que es rclone?)"
+-    if len(pregunta) > 300:
+-        return "[[rojo]]La pregunta es demasiado larga[[/]] (maximo 300 caracteres)."
++def _normalizar(texto):
++    return ''.join(ch for ch in unicodedata.normalize('NFD', (texto or '').lower())
++                   if unicodedata.category(ch) != 'Mn')
++
++
++def _clave_respuesta(pregunta):
++    norm = ' '.join(_normalizar(pregunta).split())
++    return 'ai:resp:' + hashlib.sha256(norm.encode('utf-8')).hexdigest()
+ 
+-    xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
+-    ip = (request.META.get('HTTP_CF_CONNECTING_IP')
+-          or (xff.split(',')[0].strip() if xff else '')
+-          or request.META.get('REMOTE_ADDR', 'anon'))
+-    rl_key = 'ask_rl_' + ip
++
++def _cache_get(clave):
+     try:
+-        usos = cache.get(rl_key, 0)
+-        if usos >= 6:
+-            return "[[amarillo]]Vas muy rapido.[[/]] Espera un minuto antes de volver a preguntar."
+-        cache.set(rl_key, usos + 1, 60)
++        return cache.get(clave)
++    except Exception:
++        return None
++
++
++def _cache_set(clave, valor, segundos):
++    try:
++        cache.set(clave, valor, segundos)
+     except Exception:
+         pass
+ 
+-    system, art_rel = _contexto_ask(pregunta, request)
++
++def _leer_json(request):
++    """Cuerpo JSON del terminal, acotado a MAX_BODY. None si no es valido."""
++    try:
++        longitud = int(request.META.get('CONTENT_LENGTH') or 0)
++    except ValueError:
++        return None
++    if longitud > MAX_BODY:
++        return None
++    try:
++        data = json.loads(request.body or b'{}')
++    except Exception:
++        return None
++    return data if isinstance(data, dict) else None
++
++
++def _limite_ask(ip):
++    """Mensaje si el visitante pregunta demasiado rapido, o None."""
++    if (excede_limite('ask:min:' + ip, ASK_POR_MINUTO, 60)
++            or excede_limite('ask:hora:' + ip, ASK_POR_HORA, 3600)):
++        return MSG_RAPIDO
++    return None
++
++
++def _respuesta_determinista(pregunta):
++    """Preguntas sobre datos o sobre la propia IA: se contestan sin el modelo."""
++    _pl = _normalizar(pregunta)
++    if (any(k in _pl for k in ['ultim', 'reciente', 'last', 'latest', 'nuevo']) and
++            any(k in _pl for k in ['articulo', 'post', 'entrada', 'publicad', 'subi'])):
++        _u = Article.objects.filter(is_published=True).order_by('-created_at').first()
++        if _u:
++            return ("[[verde]]IA[[/]] [[gris]].[[/]] El ultimo articulo publicado es [[azul]]" + _u.title +
++                    "[[/]], del " + _u.created_at.strftime('%d/%m/%Y') + ".\n\n[[gris]]Leer:[[/]] /article/" + _u.slug + "/")
++
++    if any(k in _pl for k in ['como funcionas', 'como trabajas', 'como estas hecha', 'como estas programad', 'como estas construid', 'como estas basad', 'estas configurad', 'te configuraron', 'fuiste configurad', 'como te configuraron', 'te programaron', 'te han programado', 'te hicieron', 'te crearon', 'te construyeron', 'te desarrollaron', 'te montaron', 'que modelo eres', 'que modelo usas', 'que ia eres', 'con que estas hecha', 'en que estas basad', 'como te programaron', 'como te hicieron', 'como te crearon']):
++        return ("[[verde]]IA[[/]] [[gris]].[[/]] Funciono con un modelo de lenguaje [[azul]]Llama 3.2[[/]] ejecutandose en local a traves de [[azul]]Ollama[[/]], sin depender de ninguna API externa. "
++                "Para responder sobre la wiki uso un sistema RAG: busco los fragmentos mas relevantes de los articulos con embeddings ([[azul]]bge-m3[[/]]) y similitud coseno, y se los paso al modelo. "
++                "Todo esta montado sobre [[azul]]Django[[/]], que hace de proxy seguro hacia el servidor de IA, y la respuesta te llega en streaming.")
++
++    if any(k in _pl for k in ['coseno', 'embedding', 'como funciona el rag', 'que es el rag', 'como encuentras los articulos', 'como buscas los articulos', 'como recuperas']):
++        return ("[[verde]]IA[[/]] [[gris]].[[/]] La [[azul]]similitud coseno[[/]] mide lo parecidos que son dos textos por su significado. Primero convierto tu pregunta y cada fragmento de los articulos en un vector de numeros (un embedding de 1024 dimensiones con bge-m3) que representa su sentido. "
++                "Luego calculo el coseno del angulo entre el vector de tu pregunta y el de cada fragmento: va de 0 (nada que ver) a 1 (practicamente el mismo tema). "
++                "Me quedo con los fragmentos de mayor puntuacion y se los paso al modelo. Lo bueno es que compara el significado, no las palabras exactas: por eso 'copiar archivos a la nube' encuentra el articulo de rclone aunque no digas 'rclone'.")
++    return None
+ 
+ 
+-    url = os.getenv('OLLAMA_URL', 'http://192.168.0.183:11434').rstrip('/') + '/api/generate'
+-    modelo = os.getenv('OLLAMA_MODEL', 'llama3.2:3b')
+-    payload = json.dumps({
+-        "model": modelo,
++def _payload_ollama(pregunta, system, stream):
++    return json.dumps({
++        "model": os.getenv('OLLAMA_MODEL', 'llama3.2:3b'),
+         "prompt": pregunta,
+         "system": system,
+-        "stream": False,
++        "stream": stream,
+         "keep_alive": "30m",
+         "options": {"temperature": 0.3, "top_p": 0.9, "repeat_penalty": 1.1, "num_predict": 450}
+     }).encode('utf-8')
+ 
+-    try:
+-        req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
+-        with urllib.request.urlopen(req, timeout=25) as resp:
+-            data = json.loads(resp.read().decode('utf-8'))
+-        respuesta = (data.get('response') or '').strip()
+-    except Exception:
+-        return "[[rojo]]La IA no esta disponible ahora mismo.[[/]] Intentalo de nuevo en un momento."
+ 
+-    if not respuesta:
+-        return "No he podido generar una respuesta. Prueba a reformular la pregunta."
+-    import re as _re
+-    _resp = []
+-    for _ln in respuesta.split("\n"):
+-        if _re.match(r'(?i)^\s*leer\s*:?\s*(/article/\S*)?\s*$', _ln):
+-            continue
+-        _resp.append(_re.sub(r'/article/\S*', '', _ln))
+-    respuesta = "\n".join(_resp).strip()
+-    if not respuesta:
+-        respuesta = "Te recomiendo este articulo:"
+-    salida = "[[verde]]IA[[/]] [[gris]].[[/]] " + respuesta
+-    if art_rel:
+-        salida += "\n\n[[gris]]Leer:[[/]] /article/" + art_rel.slug + "/"
+-    return salida
++def _url_ollama():
++    return os.getenv('OLLAMA_URL', 'http://192.168.0.183:11434').rstrip('/') + '/api/generate'
++
++
++def _enlace(pregunta, art_rel):
++    if _pregunta_identidad(pregunta):
++        return "\n\n[[gris]]Para saber mas, escribe[[/]] [[amarillo]]stack[[/]] [[gris]]o[[/]] [[amarillo]]whoami[[/]][[gris]].[[/]]"
++    return ("\n\n[[gris]]Leer:[[/]] /article/" + art_rel.slug + "/") if art_rel else ""
++
++
++def _cmd_ask(arg, request):
++    """ask por /terminal/cmd/ (sin streaming). Mismas puertas que terminal_ask."""
++    pregunta = (arg or '').strip()
++    if not pregunta:
++        return "Uso: [[amarillo]]ask <pregunta>[[/]]  (ej: ask que es rclone?)"
++    if len(pregunta) > 300:
++        return "[[rojo]]La pregunta es demasiado larga[[/]] (maximo 300 caracteres)."
++
++    ip = client_ip(request)
++    aviso = _limite_ask(ip)
++    if aviso:
++        return aviso
++    determinista = _respuesta_determinista(pregunta)
++    if determinista:
++        return determinista
++    clave = _clave_respuesta(pregunta)
++    guardada = _cache_get(clave)
++    if guardada:
++        return guardada
++
++    turno = reservar_turno_ip(ip)
++    if not turno:
++        return MSG_EN_CURSO
++    plaza = reservar_plaza_ia()
++    if not plaza:
++        turno.liberar()
++        return MSG_OCUPADA
++    try:
++        system, art_rel = _contexto_ask(pregunta, request)
++        try:
++            req = urllib.request.Request(_url_ollama(), data=_payload_ollama(pregunta, system, False),
++                                         headers={'Content-Type': 'application/json'})
++            with urllib.request.urlopen(req, timeout=60) as resp:
++                data = json.loads(resp.read().decode('utf-8'))
++            respuesta = (data.get('response') or '').strip()
++        except Exception:
++            return MSG_NO_DISPONIBLE
++
++        if not respuesta:
++            return "No he podido generar una respuesta. Prueba a reformular la pregunta."
++        _resp = []
++        for _ln in respuesta.split("\n"):
++            if re.match(r'(?i)^\s*leer\s*:?\s*(/article/\S*)?\s*$', _ln):
++                continue
++            _resp.append(re.sub(r'/article/\S*', '', _ln))
++        respuesta = "\n".join(_resp).strip() or "Te recomiendo este articulo:"
++        salida = "[[verde]]IA[[/]] [[gris]].[[/]] " + respuesta + _enlace(pregunta, art_rel)
++        _cache_set(clave, salida, ASK_CACHE_SEG)
++        return salida
++    finally:
++        plaza.liberar()
++        turno.liberar()
+ 
+ 
+ @csrf_exempt
+ @require_POST
+ def terminal_command(request):
+-    try:
+-        data = json.loads(request.body)
+-        raw = (data.get('command') or '').strip()
+-    except Exception:
+-        return JsonResponse({'output': 'Error en la peticion.'})
++    data = _leer_json(request)
++    if data is None:
++        return JsonResponse({'output': 'Error en la peticion.'}, status=400)
++    raw = (data.get('command') or '').strip()[:400]
+ 
+     if not raw:
+         return JsonResponse({'output': ''})
+ 
++    if excede_limite('cmd:min:' + client_ip(request), CMD_POR_MINUTO, 60):
++        return JsonResponse({'output': MSG_RAPIDO}, status=429)
++
+     partes = raw.split(maxsplit=1)
+     cmd = partes[0].lower()
+     arg = partes[1].strip() if len(partes) > 1 else ''
+@@ -547,12 +689,15 @@ def terminal_command(request):
+ 
+ 
+ def _stream_texto(texto):
++    """Escribe el texto poco a poco (efecto terminal) sin retener el worker mas de ~1 s."""
+     from django.http import StreamingHttpResponse
+-    import time as _t, re as _re
++    trozos = re.findall(r'\S+\s*', texto)
++    pausa = min(0.03, 1.0 / max(1, len(trozos)))
++
+     def _gen():
+-        for _p in _re.findall(r'\S+\s*', texto):
++        for _p in trozos:
+             yield _p
+-            _t.sleep(0.03)
++            time.sleep(pausa)
+     _r = StreamingHttpResponse(_gen(), content_type='text/plain; charset=utf-8')
+     _r['X-Accel-Buffering'] = 'no'
+     _r['Cache-Control'] = 'no-cache'
+@@ -562,12 +707,21 @@ def _stream_texto(texto):
+ @csrf_exempt
+ @require_POST
+ def terminal_ask(request):
+-    from django.http import StreamingHttpResponse, HttpResponse
+-    try:
+-        data = json.loads(request.body)
+-        pregunta = (data.get('command') or '').strip()
+-    except Exception:
+-        pregunta = ''
++    """Pregunta a la IA con respuesta en streaming.
++
++    Orden de las puertas, de la mas barata a la mas cara:
++      1. ritmo por visitante (5/min, 30/h), tambien para las respuestas fijas;
++      2. respuestas deterministas y respuestas ya cacheadas (no tocan Ollama);
++      3. una sola pregunta en curso por visitante, aunque abra muchas pestanas;
++      4. una de las AI_MAX_CONCURRENT plazas globales: si estan llenas se avisa
++         al momento en vez de hacer cola, asi la IA nunca deja sin workers al
++         resto de la web.
++    """
++    from django.http import StreamingHttpResponse
++    data = _leer_json(request)
++    if data is None:
++        return _stream_texto("[[rojo]]Peticion no valida.[[/]]")
++    pregunta = (data.get('command') or '').strip()
+     if pregunta.lower().startswith('ask'):
+         pregunta = pregunta[3:].strip()
+     if not pregunta:
+@@ -575,58 +729,35 @@ def terminal_ask(request):
+     if len(pregunta) > 300:
+         return _stream_texto("[[rojo]]La pregunta es demasiado larga[[/]] (maximo 300 caracteres).")
+ 
+-    import unicodedata as _ud
+-    _pl = ''.join(ch for ch in _ud.normalize('NFD', pregunta.lower()) if _ud.category(ch) != 'Mn')
+-    if (any(k in _pl for k in ['ultim', 'reciente', 'last', 'latest', 'nuevo']) and
+-            any(k in _pl for k in ['articulo', 'post', 'entrada', 'publicad', 'subi'])):
+-        _u = Article.objects.filter(is_published=True).order_by('-created_at').first()
+-        if _u:
+-            _t = ("[[verde]]IA[[/]] [[gris]].[[/]] El ultimo articulo publicado es [[azul]]" + _u.title +
+-                  "[[/]], del " + _u.created_at.strftime('%d/%m/%Y') + ".\n\n[[gris]]Leer:[[/]] /article/" + _u.slug + "/")
+-            return _stream_texto(_t)
++    ip = client_ip(request)
++    aviso = _limite_ask(ip)
++    if aviso:
++        return _stream_texto(aviso)
+ 
+-    if any(k in _pl for k in ['como funcionas', 'como trabajas', 'como estas hecha', 'como estas programad', 'como estas construid', 'como estas basad', 'estas configurad', 'te configuraron', 'fuiste configurad', 'como te configuraron', 'te programaron', 'te han programado', 'te hicieron', 'te crearon', 'te construyeron', 'te desarrollaron', 'te montaron', 'que modelo eres', 'que modelo usas', 'que ia eres', 'con que estas hecha', 'en que estas basad', 'como te programaron', 'como te hicieron', 'como te crearon']):
+-        _t = ("[[verde]]IA[[/]] [[gris]].[[/]] Funciono con un modelo de lenguaje [[azul]]Llama 3.2[[/]] ejecutandose en local a traves de [[azul]]Ollama[[/]], sin depender de ninguna API externa. "
+-              "Para responder sobre la wiki uso un sistema RAG: busco los fragmentos mas relevantes de los articulos con embeddings ([[azul]]bge-m3[[/]]) y similitud coseno, y se los paso al modelo. "
+-              "Todo esta montado sobre [[azul]]Django[[/]], que hace de proxy seguro hacia el servidor de IA, y la respuesta te llega en streaming.")
+-        return _stream_texto(_t)
++    determinista = _respuesta_determinista(pregunta)
++    if determinista:
++        return _stream_texto(determinista)
+ 
+-    if any(k in _pl for k in ['coseno', 'embedding', 'como funciona el rag', 'que es el rag', 'como encuentras los articulos', 'como buscas los articulos', 'como recuperas']):
+-        _t = ("[[verde]]IA[[/]] [[gris]].[[/]] La [[azul]]similitud coseno[[/]] mide lo parecidos que son dos textos por su significado. Primero convierto tu pregunta y cada fragmento de los articulos en un vector de numeros (un embedding de 1024 dimensiones con bge-m3) que representa su sentido. "
+-              "Luego calculo el coseno del angulo entre el vector de tu pregunta y el de cada fragmento: va de 0 (nada que ver) a 1 (practicamente el mismo tema). "
+-              "Me quedo con los fragmentos de mayor puntuacion y se los paso al modelo. Lo bueno es que compara el significado, no las palabras exactas: por eso 'copiar archivos a la nube' encuentra el articulo de rclone aunque no digas 'rclone'.")
+-        return _stream_texto(_t)
+-
+-    xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
+-    ip = (request.META.get('HTTP_CF_CONNECTING_IP')
+-          or (xff.split(',')[0].strip() if xff else '')
+-          or request.META.get('REMOTE_ADDR', 'anon'))
+-    try:
+-        usos = cache.get('ask_rl_' + ip, 0)
+-        if usos >= 6:
+-            return _stream_texto("[[amarillo]]Vas muy rapido.[[/]] Espera un minuto antes de volver a preguntar.")
+-        cache.set('ask_rl_' + ip, usos + 1, 60)
+-    except Exception:
+-        pass
++    clave = _clave_respuesta(pregunta)
++    guardada = _cache_get(clave)
++    if guardada:
++        return _stream_texto(guardada)
+ 
+-    system, art_rel = _contexto_ask(pregunta, request)
+-    if _pregunta_identidad(pregunta):
+-        link = "\n\n[[gris]]Para saber mas, escribe[[/]] [[amarillo]]stack[[/]] [[gris]]o[[/]] [[amarillo]]whoami[[/]][[gris]].[[/]]"
+-    else:
+-        link = ("\n\n[[gris]]Leer:[[/]] /article/" + art_rel.slug + "/") if art_rel else ""
+-
+-    url = os.getenv('OLLAMA_URL', 'http://192.168.0.183:11434').rstrip('/') + '/api/generate'
+-    modelo = os.getenv('OLLAMA_MODEL', 'llama3.2:3b')
+-    payload = json.dumps({
+-        "model": modelo, "prompt": pregunta, "system": system, "stream": True,
+-        "keep_alive": "30m",
+-        "options": {"temperature": 0.3, "top_p": 0.9, "repeat_penalty": 1.1, "num_predict": 450}
+-    }).encode('utf-8')
++    turno = reservar_turno_ip(ip)
++    if not turno:
++        return _stream_texto(MSG_EN_CURSO)
++    plaza = reservar_plaza_ia()
++    if not plaza:
++        turno.liberar()
++        return _stream_texto(MSG_OCUPADA)
+ 
+     def generar():
+-        primero = True
++        enviado = []
++        completa = False
+         try:
+-            req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
++            system, art_rel = _contexto_ask(pregunta, request)
++            req = urllib.request.Request(_url_ollama(), data=_payload_ollama(pregunta, system, True),
++                                         headers={'Content-Type': 'application/json'})
+             with urllib.request.urlopen(req, timeout=60) as resp:
+                 for linea in resp:
+                     linea = linea.strip()
+@@ -638,19 +769,28 @@ def terminal_ask(request):
+                         continue
+                     tok = obj.get('response', '')
+                     if tok:
+-                        if primero:
+-                            yield "[[verde]]IA[[/]] [[gris]].[[/]] " + tok
+-                            primero = False
+-                        else:
+-                            yield tok
++                        if not enviado:
++                            tok = "[[verde]]IA[[/]] [[gris]].[[/]] " + tok
++                        enviado.append(tok)
++                        yield tok
+                     if obj.get('done'):
++                        completa = True
+                         break
++            enlace = _enlace(pregunta, art_rel)
++            if enlace:
++                enviado.append(enlace)
++                yield enlace
+         except Exception:
+-            yield "\n[[rojo]]La IA no esta disponible ahora mismo.[[/]]"
+-        if link:
+-            yield link
+-
+-    resp = StreamingHttpResponse(generar(), content_type='text/plain; charset=utf-8')
++            yield "\n" + MSG_NO_DISPONIBLE
++            completa = False
++        finally:
++            plaza.liberar()
++            turno.liberar()
++        if completa and enviado:
++            _cache_set(clave, ''.join(enviado), ASK_CACHE_SEG)
++
++    resp = StreamingHttpResponse(RespuestaLiberable(generar(), plaza, turno),
++                                 content_type='text/plain; charset=utf-8')
+     resp['X-Accel-Buffering'] = 'no'
+     resp['Cache-Control'] = 'no-cache'
+     return resp
+diff --git a/wiki/tests.py b/wiki/tests.py
+index 834a0a0..2ae5ab6 100644
+--- a/wiki/tests.py
++++ b/wiki/tests.py
+@@ -1,11 +1,23 @@
++import json
++from unittest import mock
++
++from django.conf import settings
+ from django.contrib.auth.models import User
+-from django.test import TestCase
++from django.core.cache import cache
++from django.test import RequestFactory, TestCase, override_settings
+ from django.urls import reverse
+ 
+-from .models import Article, Category
++from . import terminal
++from .models import Article, Category, HoneypotAttempt
++from .security import client_ip, reservar_plaza_ia, reservar_turno_ip
+ from .templatetags.wiki_tags import get_categories
+ 
++# Los tests no tocan el Redis de producción.
++CACHE_TESTS = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
++                           'LOCATION': 'wiki-tests'}}
++
+ 
++@override_settings(CACHES=CACHE_TESTS)
+ class FrontendTests(TestCase):
+     @classmethod
+     def setUpTestData(cls):
+@@ -58,3 +70,206 @@ class FrontendTests(TestCase):
+         self.assertEqual(cats['redes'].n_articles, 0)       # el borrador no cuenta
+         self.assertEqual(cats['redes'].total_articles, 1)   # incluye Mikrotik
+         self.assertEqual(cats['redes'].subs[0].n_articles, 1)
++
++
++@override_settings(CACHES=CACHE_TESTS, AI_MAX_CONCURRENT=2)
++class SeguridadTests(TestCase):
++    """Cada test reproduce un abuso real y comprueba que ya no funciona."""
++
++    IP = '203.0.113.7'
++
++    @classmethod
++    def setUpTestData(cls):
++        cls.user = User.objects.create(username='pablo')
++        cat = Category.objects.create(name='Redes', slug='redes')
++        cls.article = Article.objects.create(
++            title='VPN WireGuard', slug='vpn-wireguard', category=cat, author=cls.user,
++            is_published=True, content='Intro wireguard')
++        cls.staff = User.objects.create_user('admin', password='x', is_staff=True)
++
++    def setUp(self):
++        cache.clear()
++
++    # ------------------------------------------------------------ ayudas --
++
++    def _ask(self, pregunta, ip=IP):
++        resp = self.client.post('/terminal/ask/', data=json.dumps({'command': 'ask ' + pregunta}),
++                                content_type='application/json', HTTP_X_REAL_IP=ip)
++        texto = b''.join(resp.streaming_content).decode()
++        resp.close()
++        return texto
++
++    def _ollama_falso(self, texto='rclone sincroniza'):
++        lineas = [json.dumps({'response': texto, 'done': False}).encode() + b'\n',
++                  json.dumps({'response': '', 'done': True}).encode() + b'\n']
++
++        class Respuesta:
++            def __enter__(self):
++                return iter(lineas)
++
++            def __exit__(self, *a):
++                return False
++        return mock.patch('urllib.request.urlopen', return_value=Respuesta())
++
++    def _sin_rag(self):
++        return mock.patch.object(terminal, '_contexto_ask', return_value=('sys', None))
++
++    def _verificar_2fa(self):
++        from django_otp import DEVICE_ID_SESSION_KEY
++        from django_otp.plugins.otp_static.models import StaticDevice
++        device = StaticDevice.objects.create(user=self.staff, name='test')
++        session = self.client.session
++        session[DEVICE_ID_SESSION_KEY] = device.persistent_id
++        session.save()
++
++    def _plazas_libres(self):
++        plazas = [reservar_plaza_ia(), reservar_plaza_ia()]
++        libres = all(plazas)
++        for p in plazas:
++            if p:
++                p.liberar()
++        return libres
++
++    # ----------------------------------------------------------- LinkedIn --
++
++    def test_linkedin_y_subidas_ocultas_para_anonimos(self):
++        casos = [('get', '/linkedin/auth/'),
++                 ('get', '/linkedin/callback/?code=x&state=y'),
++                 ('post', '/linkedin/post/%d/' % self.article.pk),
++                 ('post', '/linkedin/generate/%d/' % self.article.pk),
++                 ('post', '/mdeditor/uploads/')]
++        for metodo, url in casos:
++            with self.subTest(url=url):
++                self.assertEqual(getattr(self.client, metodo)(url).status_code, 404)
++
++    def test_linkedin_exige_staff_con_2fa(self):
++        self.client.force_login(self.staff)
++        self.assertEqual(self.client.get('/linkedin/auth/').status_code, 404)
++        self._verificar_2fa()
++        r = self.client.get('/linkedin/auth/')
++        self.assertEqual(r.status_code, 302)
++        self.assertIn('state=', r['Location'])
++        self.assertTrue(self.client.session['linkedin_oauth_state'])
++
++    def test_callback_rechaza_un_state_ajeno(self):
++        self.client.force_login(self.staff)
++        self._verificar_2fa()
++        with mock.patch('wiki.linkedin.get_access_token') as token:
++            r = self.client.get('/linkedin/callback/?code=abc&state=falso')
++        self.assertEqual(r.status_code, 302)
++        token.assert_not_called()
++
++    def test_admin_real_sale_de_settings(self):
++        self.assertEqual(reverse('admin:index'), '/' + settings.ADMIN_URL)
++
++    # ------------------------------------------------------------ IP real --
++
++    def test_ip_real_ignora_cabeceras_falsificables(self):
++        from axes.helpers import get_client_ip_address
++        rf = RequestFactory()
++        req = rf.get('/', HTTP_X_REAL_IP='203.0.113.5',
++                     HTTP_X_FORWARDED_FOR='1.2.3.4', HTTP_CF_CONNECTING_IP='5.6.7.8')
++        self.assertEqual(client_ip(req), '203.0.113.5')
++        self.assertEqual(get_client_ip_address(req), '203.0.113.5')   # axes usa la misma
++        self.assertEqual(client_ip(rf.get('/', HTTP_X_REAL_IP='no-es-una-ip')), '127.0.0.1')
++
++    def test_honeypot_limita_los_registros_por_ip(self):
++        for _ in range(25):
++            self.client.post('/admin/', {'username': 'root', 'password': 'x'},
++                             HTTP_X_REAL_IP='198.51.100.9')
++        self.assertEqual(HoneypotAttempt.objects.count(), 20)
++
++    # ---------------------------------------------------------- busqueda --
++
++    def test_busqueda_acotada_y_con_limite_por_visitante(self):
++        r = self.client.get('/search/', {'q': 'w' * 500}, HTTP_X_REAL_IP='192.0.2.1')
++        self.assertEqual(r.status_code, 200)
++        self.assertEqual(len(r.context['query']), 100)
++        for _ in range(29):
++            self.client.get('/search/', {'q': 'wireguard'}, HTTP_X_REAL_IP='192.0.2.1')
++        r = self.client.get('/search/', {'q': 'wireguard'}, HTTP_X_REAL_IP='192.0.2.1')
++        self.assertEqual(r.status_code, 429)
++        r = self.client.get('/search/', {'q': 'wireguard'}, HTTP_X_REAL_IP='192.0.2.2')
++        self.assertContains(r, 'VPN WireGuard')
++
++    def test_articulo_cacheado_se_actualiza_al_editar(self):
++        url = reverse('wiki:article_detail', args=['vpn-wireguard'])
++        self.assertContains(self.client.get(url), 'Intro wireguard')
++        self.article.content = 'Texto nuevo'
++        self.article.save()
++        self.assertContains(self.client.get(url), 'Texto nuevo')
++
++    # ------------------------------------------------------------ terminal --
++
++    def test_terminal_rechaza_cuerpos_grandes(self):
++        r = self.client.post('/terminal/cmd/', data=json.dumps({'command': 'help', 'x': 'a' * 10000}),
++                             content_type='application/json')
++        self.assertEqual(r.status_code, 400)
++
++    def test_terminal_limita_los_comandos(self):
++        for _ in range(60):
++            self.client.post('/terminal/cmd/', data=json.dumps({'command': 'date'}),
++                             content_type='application/json', HTTP_X_REAL_IP='192.0.2.50')
++        r = self.client.post('/terminal/cmd/', data=json.dumps({'command': 'date'}),
++                             content_type='application/json', HTTP_X_REAL_IP='192.0.2.50')
++        self.assertEqual(r.status_code, 429)
++
++    # ------------------------------------------------------------------ IA --
++
++    def test_ask_limita_el_ritmo_tambien_en_respuestas_fijas(self):
++        for _ in range(5):
++            self.assertIn('Ollama', self._ask('como funcionas'))
++        self.assertIn('Vas muy rapido', self._ask('como funcionas'))
++
++    def test_ask_con_plazas_llenas_avisa_sin_llamar_a_ollama(self):
++        ocupadas = [reservar_plaza_ia(), reservar_plaza_ia()]
++        self.assertTrue(all(ocupadas))
++        with mock.patch.object(terminal, '_contexto_ask') as ctx, \
++                mock.patch('urllib.request.urlopen') as ollama:
++            texto = self._ask('que es rclone')
++        self.assertIn('atendiendo a otras personas', texto)
++        ctx.assert_not_called()
++        ollama.assert_not_called()
++        for p in ocupadas:
++            p.liberar()
++        self.assertIsNotNone(reservar_turno_ip(self.IP))   # su turno no quedó bloqueado
++
++    def test_ask_una_pregunta_a_la_vez_por_visitante(self):
++        reservar_turno_ip(self.IP)                       # otra pestaña ya está preguntando
++        self.assertIn('pregunta en curso', self._ask('que es rclone'))
++        with self._sin_rag(), self._ollama_falso():
++            self.assertIn('rclone sincroniza', self._ask('que es rclone', ip='203.0.113.8'))
++
++    def test_ask_libera_plazas_y_cachea_la_respuesta(self):
++        with self._sin_rag(), self._ollama_falso() as ollama:
++            primera = self._ask('que es rclone')
++            segunda = self._ask('Que es RCLONE')         # misma pregunta normalizada
++        self.assertIn('rclone sincroniza', primera)
++        self.assertEqual(primera, segunda)
++        self.assertEqual(ollama.call_count, 1)           # la segunda salió de la caché
++        self.assertTrue(self._plazas_libres())
++        self.assertIsNotNone(reservar_turno_ip(self.IP))
++
++    def test_ask_libera_si_el_visitante_cierra_antes_de_leer(self):
++        with self._sin_rag(), self._ollama_falso():
++            resp = self.client.post('/terminal/ask/', data=json.dumps({'command': 'ask que es rclone'}),
++                                    content_type='application/json', HTTP_X_REAL_IP=self.IP)
++            resp.close()                                 # sin leer ni un byte
++        self.assertTrue(self._plazas_libres())
++        self.assertIsNotNone(reservar_turno_ip(self.IP))
++
++    def test_ask_libera_y_no_cachea_si_ollama_falla(self):
++        with self._sin_rag(), mock.patch('urllib.request.urlopen', side_effect=OSError('caido')):
++            self.assertIn('no esta disponible', self._ask('que es rclone'))
++        self.assertTrue(self._plazas_libres())
++        self.assertIsNone(cache.get(terminal._clave_respuesta('que es rclone')))
++
++    def test_ask_por_cmd_tiene_las_mismas_puertas(self):
++        ocupadas = [reservar_plaza_ia(), reservar_plaza_ia()]
++        with mock.patch('urllib.request.urlopen') as ollama:
++            r = self.client.post('/terminal/cmd/', data=json.dumps({'command': 'ask que es rclone'}),
++                                 content_type='application/json', HTTP_X_REAL_IP=self.IP)
++        self.assertIn('atendiendo a otras personas', r.json()['output'])
++        ollama.assert_not_called()
++        for p in ocupadas:
++            p.liberar()
+diff --git a/wiki/views.py b/wiki/views.py
+index eef3892..2673ec4 100644
+--- a/wiki/views.py
++++ b/wiki/views.py
+@@ -1,8 +1,70 @@
++import hashlib
++import logging
++import secrets
++
++from django.core.cache import cache
++from django.http import HttpResponse, JsonResponse
+ from django.shortcuts import render, get_object_or_404, redirect
++from django.urls import reverse
+ from django.views.decorators.csrf import csrf_exempt
++from django.views.decorators.http import require_POST
+ from django.utils.html import strip_tags
+ from .models import Category, Article
++from .security import client_ip, excede_limite, staff_verificado
+ import markdown
++
++log = logging.getLogger(__name__)
++
++# Lo que cuesta CPU (convertir Markdown) se guarda en Redis y se invalida solo:
++# la clave incluye updated_at, así que editar un artículo genera otra clave.
++CACHE_RENDER = 24 * 3600
++CACHE_BUSQUEDA = 5 * 60
++MAX_Q = 100
++MAX_RESULTADOS = 30
++BUSQUEDAS_POR_MINUTO = 30
++SUGERENCIAS_POR_MINUTO = 60
++
++
++def _cacheado(clave, calcular, segundos):
++    try:
++        valor = cache.get(clave)
++    except Exception:
++        return calcular()
++    if valor is None:
++        valor = calcular()
++        try:
++            cache.set(clave, valor, segundos)
++        except Exception:
++            pass
++    return valor
++
++
++def _version(article):
++    return '%s:%s' % (article.pk, article.updated_at.timestamp() if article.updated_at else 0)
++
++
++def _resumen(article):
++    return _cacheado('md:resumen:' + _version(article),
++                     lambda: strip_tags(markdown.markdown(article.content))[:200],
++                     CACHE_RENDER)
++
++
++def _ids_busqueda(query, limite):
++    """Ids de artículos que coinciden con la búsqueda, cacheados unos minutos."""
++    clave = 'busq:%d:%s' % (limite, hashlib.sha256(query.lower().encode('utf-8')).hexdigest())
++    return _cacheado(clave, lambda: list(
++        Article.objects.filter(is_published=True).filter(
++            models.Q(title__icontains=query) |
++            models.Q(content__icontains=query) |
++            models.Q(tags__icontains=query) |
++            models.Q(category__name__icontains=query)
++        ).distinct().values_list('id', flat=True)[:limite]
++    ), CACHE_BUSQUEDA)
++
++
++def _articulos_por_ids(ids):
++    por_id = {a.id: a for a in Article.objects.filter(id__in=ids, is_published=True).select_related('category')}
++    return [por_id[i] for i in ids if i in por_id]
+ from markdown.extensions.codehilite import CodeHiliteExtension
+ from pygments.formatters import HtmlFormatter
+ 
+@@ -41,11 +103,9 @@ def home(request):
+ 
+ def category_detail(request, slug):
+     category = get_object_or_404(Category, slug=slug)
+-    articles = Article.objects.filter(category=category, is_published=True)
+-    md = markdown.Markdown()
++    articles = list(Article.objects.filter(category=category, is_published=True))
+     for article in articles:
+-        article.summary = strip_tags(md.convert(article.content))[:200]
+-        md.reset()
++        article.summary = _resumen(article)
+     return render(request, 'wiki/category_detail.html', {
+         'category': category,
+         'articles': articles
+@@ -53,14 +113,16 @@ def category_detail(request, slug):
+ 
+ def article_detail(request, slug):
+     article = get_object_or_404(Article, slug=slug, is_published=True)
+-    md = markdown.Markdown(extensions=[
+-        'fenced_code',
+-        'tables',
+-        'toc',
+-        CodeHiliteExtension(linenums=False, guess_lang=False, css_class='highlight', pygments_formatter=LangHtmlFormatter)
+-    ])
+-    content_html = md.convert(article.content)
+-    toc = md.toc
++    def _render():
++        md = markdown.Markdown(extensions=[
++            'fenced_code',
++            'tables',
++            'toc',
++            CodeHiliteExtension(linenums=False, guess_lang=False, css_class='highlight', pygments_formatter=LangHtmlFormatter)
++        ])
++        html = md.convert(article.content)
++        return (html, md.toc)
++    content_html, toc = _cacheado('md:articulo:' + _version(article), _render, CACHE_RENDER)
+ 
+     # Tiempo de lectura (200 palabras por minuto)
+     word_count = len(article.content.split())
+@@ -86,22 +148,15 @@ def article_detail(request, slug):
+     })
+ 
+ def search(request):
+-    query = request.GET.get('q', '')
++    query = request.GET.get('q', '').strip()[:MAX_Q]
+     results = []
+-    if query:
+-        articles = Article.objects.filter(
+-            is_published=True
+-        ).filter(
+-            models.Q(title__icontains=query) |
+-            models.Q(content__icontains=query) |
+-            models.Q(tags__icontains=query) |
+-            models.Q(category__name__icontains=query)
+-        ).distinct()
+-        md = markdown.Markdown()
+-        for article in articles:
+-            article.summary = strip_tags(md.convert(article.content))[:200]
+-            md.reset()
+-        results = articles
++    if len(query) >= 2:
++        if excede_limite('busq:min:' + client_ip(request), BUSQUEDAS_POR_MINUTO, 60):
++            return HttpResponse('Demasiadas busquedas seguidas. Espera un minuto y vuelve a intentarlo.',
++                                status=429, content_type='text/plain; charset=utf-8')
++        results = _articulos_por_ids(_ids_busqueda(query, MAX_RESULTADOS))
++        for article in results:
++            article.summary = _resumen(article)
+     return render(request, 'wiki/search.html', {
+         'query': query,
+         'results': results
+@@ -122,23 +177,33 @@ def about(request):
+         'stack': stack,
+     })
+ 
++@staff_verificado
+ def linkedin_auth(request):
+     from .linkedin import get_auth_url
+-    return redirect(get_auth_url())
++    state = secrets.token_urlsafe(32)
++    request.session['linkedin_oauth_state'] = state
++    return redirect(get_auth_url(state))
+ 
++@staff_verificado
+ def linkedin_callback(request):
+     from .linkedin import get_access_token, get_profile
+     from .models import LinkedInToken
+-    
++
++    # El state impide que alguien te "conecte" su propia cuenta con un enlace preparado.
++    esperado = request.session.pop('linkedin_oauth_state', None)
++    recibido = request.GET.get('state', '')
++    if not esperado or not secrets.compare_digest(esperado, recibido):
++        return redirect(reverse('admin:index'))
++
+     code = request.GET.get('code')
+     if not code:
+-        return redirect('/admin/')
+-    
++        return redirect(reverse('admin:index'))
++
+     token_data = get_access_token(code)
+     access_token = token_data.get('access_token')
+-    
++
+     if not access_token:
+-        return redirect('/admin/')
++        return redirect(reverse('admin:index'))
+     
+     profile = get_profile(access_token)
+     author_id = profile.get('sub')
+@@ -147,28 +212,28 @@ def linkedin_callback(request):
+     token.access_token = access_token
+     token.author_id = author_id
+     token.save()
+-    
+-    return redirect('/admin/')
+ 
++    return redirect(reverse('admin:index'))
++
++@staff_verificado
++@require_POST
+ def linkedin_post(request, article_id):
+     from .linkedin import post_to_linkedin
+     from .models import LinkedInToken
+-    
+-    if request.method != 'POST':
+-        return redirect('/admin/')
+-    
++
+     token = LinkedInToken.get()
+     if not token:
+-        return redirect('/admin/wiki/linkedintoken/')
++        return redirect(reverse('admin:wiki_linkedintoken_changelist'))
+     
+     article = get_object_or_404(Article, pk=article_id)
+     text = request.POST.get('text', f'Nuevo artículo en mi wiki: {article.title}\n\nhttps://wiki.pablogg.dev/article/{article.slug}/')
+     
+-    result = post_to_linkedin(token.access_token, token.author_id, text)
+-    
+-    return redirect(f'/admin/wiki/article/{article_id}/change/')
++    post_to_linkedin(token.access_token, token.author_id, text[:3000])
++
++    return redirect(reverse('admin:wiki_article_change', args=[article_id]))
+ 
+ def tag_detail(request, tag):
++    tag = tag[:50]
+     articles = Article.objects.filter(
+         is_published=True,
+         tags__icontains=tag
+@@ -178,13 +243,11 @@ def tag_detail(request, tag):
+         'articles': articles
+     })
+ 
++@staff_verificado
++@require_POST
+ def generate_linkedin_text(request, article_id):
+     from google import genai
+     from django.conf import settings
+-    from django.http import JsonResponse
+-
+-    if request.method != 'POST':
+-        return JsonResponse({'error': 'Método no permitido'}, status=405)
+ 
+     article = get_object_or_404(Article, pk=article_id)
+ 
+@@ -213,16 +276,20 @@ Devuelve solo el texto del post, sin comillas ni explicaciones adicionales."""
+         text = response.text.strip()
+         text += f"\n\nLee el artículo completo aquí: https://wiki.pablogg.dev/article/{article.slug}/"
+         return JsonResponse({'text': text})
+-    except Exception as e:
+-        return JsonResponse({'error': str(e)}, status=500)
++    except Exception:
++        log.exception('Error generando el texto de LinkedIn con Gemini')
++        return JsonResponse({'error': 'Gemini no ha respondido; prueba de nuevo en un momento'}, status=502)
+ 
+ @csrf_exempt
+ def honeypot_admin(request):
+     from .models import HoneypotAttempt
+     from django.http import HttpResponse
+ 
+-    if request.method == 'POST':
+-        ip = request.META.get('HTTP_CF_CONNECTING_IP') or request.META.get('REMOTE_ADDR', '0.0.0.0')
++    # Se registra cada intento, pero con tope: si no, un bot podría llenar la base de datos.
++    ip = client_ip(request)
++    if (request.method == 'POST'
++            and not excede_limite('hp:ip:' + ip, 20, 3600)
++            and not excede_limite('hp:total', 1000, 3600)):
+         HoneypotAttempt.objects.create(
+             ip=ip,
+             username=request.POST.get('username', '')[:200],
+@@ -236,19 +303,12 @@ def honeypot_admin(request):
+ 
+ 
+ def search_api(request):
+-    from django.http import JsonResponse
+-    query = request.GET.get('q', '').strip()
++    query = request.GET.get('q', '').strip()[:MAX_Q]
+     resultados = []
+     if len(query) >= 2:
+-        articles = Article.objects.filter(
+-            is_published=True
+-        ).filter(
+-            models.Q(title__icontains=query) |
+-            models.Q(content__icontains=query) |
+-            models.Q(tags__icontains=query) |
+-            models.Q(category__name__icontains=query)
+-        ).distinct()[:6]
+-        for article in articles:
++        if excede_limite('sugg:min:' + client_ip(request), SUGERENCIAS_POR_MINUTO, 60):
++            return JsonResponse({'results': []}, status=429)
++        for article in _articulos_por_ids(_ids_busqueda(query, 6)):
+             resultados.append({
+                 'title': article.title,
+                 'url': f'/article/{article.slug}/',
+diff --git a/wiki_pg/settings.py b/wiki_pg/settings.py
+index 8c3fd1e..425bfbd 100644
+--- a/wiki_pg/settings.py
++++ b/wiki_pg/settings.py
+@@ -31,6 +31,10 @@ SECRET_KEY = os.getenv('SECRET_KEY')
+ DEBUG = False
+ 
+ ALLOWED_HOSTS = ['192.168.0.63', 'localhost', '127.0.0.1', 'wiki.pablogg.dev']
++
++# Ruta del admin real. Va en el .env para que no quede en el repositorio público:
++# si está aquí, cualquiera que lea GitHub se salta el honeypot de /admin/.
++ADMIN_URL = os.getenv('ADMIN_URL', 'termistawk').strip('/') + '/'
+ CSRF_TRUSTED_ORIGINS = ['https://wiki.pablogg.dev']
+ 
+ # Application definition
+@@ -182,6 +186,30 @@ SECURE_HSTS_PRELOAD = True
+ SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
+ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+ 
++# Caché compartida entre todos los workers (Redis, base 1; Celery usa la 0).
++# Los límites de ritmo y las plazas de la IA dependen de que sea compartida:
++# con la caché por defecto (memoria de cada proceso) cada worker contaba aparte.
++CACHES = {
++    'default': {
++        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
++        'LOCATION': os.getenv('CACHE_URL', 'redis://127.0.0.1:6379/1'),
++        'KEY_PREFIX': 'wiki',
++        'TIMEOUT': 300,
++    }
++}
++
++# Respuestas de la IA generándose a la vez como máximo (Ollama las atiende de una en una;
++# el resto esperaría en cola reteniendo workers). Si están todas ocupadas se avisa al momento.
++AI_MAX_CONCURRENT = int(os.getenv('AI_MAX_CONCURRENT', '2'))
++
++# El editor Markdown solo admite subidas de usuarios autenticados (además la URL
++# de subida está restringida a staff con 2FA en wiki_pg/urls.py).
++MDEDITOR_CONFIGS = {
++    'default': {
++        'upload_require_auth': True,
++    }
++}
++
+ # Django-axes (protección fuerza bruta)
+ AUTHENTICATION_BACKENDS = [
+     'axes.backends.AxesStandaloneBackend',
+@@ -191,3 +219,6 @@ AXES_FAILURE_LIMIT = 5
+ AXES_COOLOFF_TIME = 1
+ AXES_RESET_ON_SUCCESS = True
+ AXES_LOCKOUT_PARAMETERS = ['ip_address']
++# Detrás de nginx, REMOTE_ADDR es siempre 127.0.0.1: sin esto, 5 fallos de
++# cualquiera bloqueaban el login para todo el mundo. Usa la IP real del visitante.
++AXES_CLIENT_IP_CALLABLE = 'wiki.security.client_ip'
+diff --git a/wiki_pg/urls.py b/wiki_pg/urls.py
+index e20a97e..6920410 100644
+--- a/wiki_pg/urls.py
++++ b/wiki_pg/urls.py
+@@ -22,6 +22,8 @@ from django.conf import settings
+ from django.conf.urls.static import static
+ from wiki.sitemaps import ArticleSitemap, CategorySitemap, StaticSitemap
+ from two_factor.urls import urlpatterns as tf_urls
++from mdeditor.views import UploadView
++from wiki.security import staff_verificado
+ 
+ sitemaps = {
+     'articles': ArticleSitemap,
+@@ -31,9 +33,11 @@ sitemaps = {
+ 
+ urlpatterns = [
+     path('', include(tf_urls)),
+-    path('termistawk/', admin.site.urls),
++    path(settings.ADMIN_URL, admin.site.urls),
+     path('admin/', include('wiki.urls_honeypot')),
+-    path('mdeditor/', include('mdeditor.urls')),
++    # La subida de imágenes del editor era anónima y sin CSRF (django-mdeditor):
++    # ahora solo para staff con 2FA. Mismo nombre de URL que usa el editor.
++    path('mdeditor/uploads/', staff_verificado(UploadView.as_view()), name='uploads'),
+     path('sitemap.xml', sitemap, {'sitemaps': sitemaps}, name='django.contrib.sitemaps.views.sitemap'),
+     path('robots.txt', TemplateView.as_view(template_name='robots.txt', content_type='text/plain')),
+     path('', include('wiki.urls')),
+-- 
+2.43.0
+
