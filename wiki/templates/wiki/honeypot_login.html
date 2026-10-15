@@ -4,76 +4,84 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - Wiki PG</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --bg: #151918;
+            --surface: #1B201F;
+            --ink: #DCE4E1;
+            --ink-2: #A6B2AE;
+            --ink-3: #8A9692;
+            --line: #2A3230;
+            --accent: #5CC9A1;
+            --accent-ink: #0E1413;
+            --field-bg: #0F1312;
+            --danger: #F0A3A3;
+        }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: 'Inter', sans-serif;
-            background: #0b0f19;
-            color: #cbd5e1;
+            font-family: 'Atkinson Hyperlegible Next', system-ui, -apple-system, 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--ink-2);
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
+            padding: 1rem;
         }
         .login-container {
-            background: #151b2c;
-            border: 1px solid #1e293b;
-            border-radius: 16px;
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 14px;
             padding: 2.5rem;
             width: 100%;
             max-width: 420px;
             box-shadow: 0 12px 32px rgba(0,0,0,0.5);
         }
-        .login-logo {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            margin-bottom: 2rem;
-        }
+        .login-logo { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 2rem; }
         .login-logo-badge {
-            background: #0284c7;
-            color: white;
+            background: var(--accent);
+            color: var(--accent-ink);
             padding: 0.4rem 0.75rem;
-            border-radius: 8px;
+            border-radius: 6px;
             font-size: 1rem;
             font-weight: 700;
         }
-        .login-logo-text {
-            font-size: 1.2rem;
-            font-weight: 600;
-            color: #e2e8f0;
-        }
-        h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.5rem; color: #e2e8f0; }
-        p { color: #64748b; font-size: 0.875rem; margin-bottom: 1.5rem; }
-        label { display: block; font-size: 0.8rem; font-weight: 500; color: #94a3b8; margin-bottom: 0.4rem; }
+        .login-logo-text { font-size: 1.2rem; font-weight: 600; color: var(--ink); }
+        h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.5rem; color: var(--ink); }
+        p { color: var(--ink-3); font-size: 0.875rem; margin-bottom: 1.5rem; }
+        label { display: block; font-size: 0.8rem; font-weight: 600; color: var(--ink-2); margin-bottom: 0.4rem; }
         input[type="text"], input[type="password"], input[type="number"] {
             width: 100%;
             padding: 0.75rem 1rem;
-            background: #0b0f19;
-            border: 1px solid #1e293b;
-            border-radius: 8px;
-            color: #e2e8f0;
-            font-size: 0.875rem;
+            background: var(--field-bg);
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            color: var(--ink);
+            font: inherit;
+            font-size: 0.9rem;
             margin-bottom: 1rem;
-            transition: border 0.2s;
+            transition: border-color 0.15s, box-shadow 0.15s;
         }
-        input:focus { outline: none; border-color: #0284c7; }
+        input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(92,201,161,0.2); }
         .btn-primary {
             width: 100%;
-            padding: 0.75rem;
-            background: #0284c7;
-            color: white;
+            padding: 0.8rem;
+            background: var(--accent);
+            color: var(--accent-ink);
             border: none;
-            border-radius: 8px;
+            border-radius: 6px;
+            font: inherit;
             font-size: 0.95rem;
-            font-weight: 600;
+            font-weight: 700;
             cursor: pointer;
-            transition: background 0.2s;
+            transition: filter 0.15s;
         }
-        .btn-primary:hover { background: #0369a1; }
-        .errorlist { color: #ef4444; font-size: 0.8rem; margin-bottom: 1rem; list-style: none; }
-        a { color: #0284c7; text-decoration: none; }
+        .btn-primary:hover { filter: brightness(1.08); }
+        .errorlist { color: var(--danger); font-size: 0.8rem; margin-bottom: 1rem; list-style: none; }
+        a { color: var(--accent); text-decoration: none; }
     </style>
 </head>
 <body>
