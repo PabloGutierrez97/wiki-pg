@@ -66,6 +66,7 @@
   var started = false;
   var minimized = false;
   var maximized = false;
+  var ocupado = false;
 
   var PUBLICOS = ['help','whoami','about','stack','ls','cat','buscar','tree','stats','neofetch','contact','date','wikis','ask','clear'];
   var CONOCIDOS = PUBLICOS.concat(['sudo','exit','logout','quit']);
@@ -159,6 +160,9 @@
   }
 
   function runAsk(cmd) {
+    ocupado = true;
+    input.disabled = true;
+    input.placeholder = 'La IA esta respondiendo...';
     var div = document.createElement('div');
     output.appendChild(div);
     var pensando = true, n = 0;
@@ -171,6 +175,7 @@
     var buffer = '';
     function pintar(){ div.innerHTML = renderMD(buffer); body.scrollTop = body.scrollHeight; }
     function parar(){ pensando = false; if (timer) { clearInterval(timer); timer = null; } }
+    function liberar(){ ocupado = false; input.disabled = false; input.placeholder = ''; try { input.focus(); } catch (e) {} }
     fetch('/terminal/ask/', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -193,7 +198,8 @@
       }
       return leer();
     })
-    .catch(function(){ parar(); if (!buffer) { div.innerHTML = colorear('[[rojo]]Error de conexion.[[/]]'); } });
+    .then(function(){ liberar(); })
+    .catch(function(){ parar(); if (!buffer) { div.innerHTML = colorear('[[rojo]]Error de conexion.[[/]]'); } liberar(); });
   }
 
   function applySize() {
@@ -246,6 +252,7 @@
       return;
     }
     if (e.key === 'Enter') {
+      if (ocupado) { e.preventDefault(); return; }
       var raw = input.value.trim();
       input.value = '';
       if (!raw) return;
