@@ -19,8 +19,8 @@
 
     {% if last_updated %}
     <p class="home-last">
-        Última actualización: <a href="{% url 'wiki:article_detail' last_updated.slug %}">{{ last_updated.title }}</a>,
-        <time datetime="{{ last_updated.updated_at|date:'c' }}" class="tabular">{{ last_updated.updated_at|date:"d/m/Y" }}</time>
+        Último artículo editado: <a href="{% url 'wiki:article_detail' last_updated.slug %}">{{ last_updated.title }}</a>,
+        el <time datetime="{{ last_updated.updated_at|date:'c' }}" class="tabular">{{ last_updated.updated_at|date:"d/m/Y" }}</time>
     </p>
     {% endif %}
 </section>
@@ -32,10 +32,13 @@
         <ol class="log">
             {% for a in recent_articles %}
             <li>
-                <time datetime="{{ a.created_at|date:'c' }}">{{ a.created_at|date:"d/m/Y" }}</time>
+                <time datetime="{{ a.created_at|date:'c' }}" title="Fecha de publicación">{{ a.created_at|date:"d/m/Y" }}</time>
                 <div>
                     <a href="{% url 'wiki:article_detail' a.slug %}">{{ a.title }}</a>
-                    <span class="cat">{{ a.category.name }}</span>
+                    <span class="meta">
+                        <span>{{ a.category.name }}</span>
+                        {% if a.updated_at|date:"Ymd" != a.created_at|date:"Ymd" %}<span class="upd">Actualizado el <time datetime="{{ a.updated_at|date:'c' }}">{{ a.updated_at|date:"d/m/Y" }}</time></span>{% endif %}
+                    </span>
                 </div>
             </li>
             {% endfor %}
