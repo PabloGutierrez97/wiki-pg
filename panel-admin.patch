@@ -1,0 +1,788 @@
+From 110e39cce90a2e92a9e981f2dbe4419dcb31e40e Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Pablo=20Guti=C3=A9rrez?= <gutipablo61@gmail.com>
+Date: Thu, 15 Oct 2026 11:36:02 +0200
+Subject: [PATCH] =?UTF-8?q?Panel=20de=20administraci=C3=B3n=20con=20el=20d?=
+ =?UTF-8?q?ise=C3=B1o=20de=20la=20wiki?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- custom_admin.css reescrito: en vez de pisar estilos con !important,
+  redefine las variables de color del admin de Django con la paleta de la
+  wiki (claro y oscuro), Atkinson Hyperlegible y sin mayúsculas forzadas.
+- Se usa el conmutador de tema propio de Django, que comparte la
+  preferencia con la wiki pública; se elimina el script admin_theme.
+- Cabecera con la marca PG y favicon nuevo.
+- Panel de LinkedIn del formulario de artículo con clases en lugar de
+  estilos en línea, legible en los dos temas y con mensajes más claros.
+- Login de doble factor con el mismo diseño.
+- Corrige los avisos rojos de «Acciones recientes»: eran borrados
+  pintados con el estilo del botón Eliminar.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01EPHLGVCrXe2rjmXBdTU8ah
+---
+ wiki/static/admin/css/custom_admin.css        | 419 ++++++++++++------
+ wiki/templates/admin/base_site.html           |  55 +--
+ .../admin/wiki/article/change_form.html       |  45 +-
+ wiki/templates/two_factor/_base.html          | 132 +++---
+ 4 files changed, 377 insertions(+), 274 deletions(-)
+
+diff --git a/wiki/static/admin/css/custom_admin.css b/wiki/static/admin/css/custom_admin.css
+index bd38c43..2e16c51 100644
+--- a/wiki/static/admin/css/custom_admin.css
++++ b/wiki/static/admin/css/custom_admin.css
+@@ -1,147 +1,304 @@
+-:root, [data-theme="dark"] {
+-    --primary: #0284c7;
+-    --bg-dark: #0b0f19;
+-    --bg-card: #151b2c;
+-    --bg-sidebar: #0f1629;
+-    --border: #1e293b;
+-    --text: #cbd5e1;
+-    --text-muted: #64748b;
+-    --accent: #38bdf8;
++/* =====================================================================
++   Panel de administración con la identidad de Wiki PG.
++   En lugar de pisar estilos con !important, se redefinen las variables
++   de color que usa el propio admin de Django. Así el conmutador de tema
++   del admin (claro / oscuro / automático) sigue funcionando y comparte
++   la preferencia con la wiki pública (clave «theme» en localStorage).
++   ===================================================================== */
++
++html[data-theme="light"],
++:root {
++    --primary: #0A6B4E;
++    --secondary: #1A2120;
++    --accent: #5CC9A1;
++    --primary-fg: #FFFFFF;
++
++    --body-fg: #1A2120;
++    --body-bg: #FFFFFF;
++    --body-quiet-color: #66736F;
++    --body-medium-color: #4A5753;
++    --body-loud-color: #1A2120;
++
++    --header-color: #4A5753;
++    --header-branding-color: #1A2120;
++    --header-bg: #FFFFFF;
++    --header-link-color: #1A2120;
++
++    --breadcrumbs-fg: #66736F;
++    --breadcrumbs-link-fg: #0A6B4E;
++    --breadcrumbs-bg: #F5F7F6;
++
++    --link-fg: #0A6B4E;
++    --link-hover-color: #08513B;
++    --link-selected-fg: #0A6B4E;
++
++    --hairline-color: #DCE2DF;
++    --border-color: #C4CDC9;
++
++    --error-fg: #B42318;
++
++    --message-debug-bg: #EEF1F0;
++    --message-info-bg: #E3EEF6;
++    --message-success-bg: #E2F0EA;
++    --message-warning-bg: #FBEFD9;
++    --message-error-bg: #FBE4E1;
++
++    --darkened-bg: #F5F7F6;
++    --selected-bg: #E2F0EA;
++    --selected-row: #E2F0EA;
++
++    --button-fg: #FFFFFF;
++    --button-bg: #0A6B4E;
++    --button-hover-bg: #08513B;
++    --default-button-bg: #0A6B4E;
++    --default-button-hover-bg: #08513B;
++    --close-button-bg: #66736F;
++    --close-button-hover-bg: #4A5753;
++    --delete-button-bg: #B42318;
++    --delete-button-hover-bg: #912018;
++
++    --object-tools-fg: #FFFFFF;
++    --object-tools-bg: #4A5753;
++    --object-tools-hover-bg: #1A2120;
++
++    --font-family-primary: 'Atkinson Hyperlegible Next', system-ui, -apple-system, 'Segoe UI', sans-serif;
++    --font-family-monospace: 'Atkinson Hyperlegible Mono', ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
++
++    --pg-surface: #FFFFFF;
++    --pg-mark-bg: #1A2120;
++    --pg-mark-fg: #5CC9A1;
++    --pg-field-bg: #FFFFFF;
+ }
+ 
+-[data-theme="light"] {
+-    --primary: #0284c7;
+-    --bg-dark: #f8fafc;
+-    --bg-card: #ffffff;
+-    --bg-sidebar: #f1f5f9;
+-    --border: #e2e8f0;
+-    --text: #334155;
+-    --text-muted: #64748b;
+-    --accent: #0284c7;
++@media (prefers-color-scheme: dark) {
++    :root {
++        --primary: #5CC9A1;
++        --secondary: #1B201F;
++        --primary-fg: #0E1413;
++
++        --body-fg: #DCE4E1;
++        --body-bg: #151918;
++        --body-quiet-color: #8A9692;
++        --body-medium-color: #A6B2AE;
++        --body-loud-color: #FFFFFF;
++
++        --header-color: #A6B2AE;
++        --header-branding-color: #DCE4E1;
++        --header-bg: #1B201F;
++        --header-link-color: #DCE4E1;
++
++        --breadcrumbs-fg: #8A9692;
++        --breadcrumbs-link-fg: #5CC9A1;
++        --breadcrumbs-bg: #151918;
++
++        --link-fg: #5CC9A1;
++        --link-hover-color: #8BE0BF;
++        --link-selected-fg: #5CC9A1;
++
++        --hairline-color: #2A3230;
++        --border-color: #3A4441;
++
++        --error-fg: #F28B82;
++
++        --message-debug-bg: #242B29;
++        --message-info-bg: #18303F;
++        --message-success-bg: #1C3229;
++        --message-warning-bg: #3A2E14;
++        --message-error-bg: #3D1C1C;
++
++        --darkened-bg: #1B201F;
++        --selected-bg: #1C3229;
++        --selected-row: #1C3229;
++
++        --button-bg: #1F7A5C;
++        --button-hover-bg: #19694F;
++        --default-button-bg: #1F7A5C;
++        --default-button-hover-bg: #19694F;
++        --close-button-bg: #3A4441;
++        --close-button-hover-bg: #4A5652;
++        --delete-button-bg: #B42318;
++        --delete-button-hover-bg: #912018;
++        --object-tools-bg: #3A4441;
++        --object-tools-hover-bg: #4A5652;
++
++        --pg-surface: #1B201F;
++        --pg-field-bg: #101413;
++    }
+ }
+ 
+-/* BASE */
+-body { background: var(--bg-dark) !important; color: var(--text) !important; }
++html[data-theme="dark"] {
++    --primary: #5CC9A1;
++    --secondary: #1B201F;
++    --primary-fg: #0E1413;
++
++    --body-fg: #DCE4E1;
++    --body-bg: #151918;
++    --body-quiet-color: #8A9692;
++    --body-medium-color: #A6B2AE;
++    --body-loud-color: #FFFFFF;
++
++    --header-color: #A6B2AE;
++    --header-branding-color: #DCE4E1;
++    --header-bg: #1B201F;
++    --header-link-color: #DCE4E1;
++
++    --breadcrumbs-fg: #8A9692;
++    --breadcrumbs-link-fg: #5CC9A1;
++    --breadcrumbs-bg: #151918;
++
++    --link-fg: #5CC9A1;
++    --link-hover-color: #8BE0BF;
++    --link-selected-fg: #5CC9A1;
++
++    --hairline-color: #2A3230;
++    --border-color: #3A4441;
++
++    --error-fg: #F28B82;
++
++    --message-debug-bg: #242B29;
++    --message-info-bg: #18303F;
++    --message-success-bg: #1C3229;
++    --message-warning-bg: #3A2E14;
++    --message-error-bg: #3D1C1C;
++
++    --darkened-bg: #1B201F;
++    --selected-bg: #1C3229;
++    --selected-row: #1C3229;
++
++    --button-bg: #1F7A5C;
++    --button-hover-bg: #19694F;
++    --default-button-bg: #1F7A5C;
++    --default-button-hover-bg: #19694F;
++    --close-button-bg: #3A4441;
++    --close-button-hover-bg: #4A5652;
++    --delete-button-bg: #B42318;
++    --delete-button-hover-bg: #912018;
++    --object-tools-bg: #3A4441;
++    --object-tools-hover-bg: #4A5652;
++
++    --pg-surface: #1B201F;
++    --pg-field-bg: #101413;
++}
++
++/* ---------- Cabecera ---------- */
+ 
+-/* HEADER */
+ #header {
+-    background: var(--bg-card) !important;
+-    border-bottom: 1px solid var(--border) !important;
+-    box-shadow: 0 1px 3px rgba(0,0,0,0.4) !important;
++    border-bottom: 1px solid var(--hairline-color);
++    padding-top: 10px;
++    padding-bottom: 10px;
++}
++#site-name a:link, #site-name a:visited {
++    display: flex; align-items: center; gap: 0.6rem;
++    color: var(--header-branding-color);
++    text-decoration: none;
++    font-size: 1.05rem;
++    font-weight: 700;
+ }
+-#branding h1 a:link, #branding h1 a:visited { color: white !important; }
+-#user-tools a { color: var(--accent) !important; }
+-
+-/* BREADCRUMBS */
+-div.breadcrumbs {
+-    background: var(--bg-card) !important;
+-    border-bottom: 1px solid var(--border) !important;
+-    color: var(--text-muted) !important;
++.pg-mark {
++    display: inline-grid; place-items: center;
++    width: 30px; height: 30px;
++    background: var(--pg-mark-bg); color: var(--pg-mark-fg);
++    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
++    border-radius: 6px;
++    font-family: var(--font-family-monospace);
++    font-size: 0.8rem; font-weight: 600;
+ }
+-div.breadcrumbs a { color: var(--accent) !important; }
+-
+-/* SIDEBAR */
+-#nav-sidebar { background: var(--bg-sidebar) !important; border-right: 1px solid var(--border) !important; }
+-.sidebar-sticky { background: var(--bg-sidebar) !important; }
+-#nav-sidebar a { color: var(--text) !important; }
+-#nav-sidebar a:hover { color: var(--accent) !important; }
+-#nav-sidebar .module th {
+-    background: var(--bg-sidebar) !important;
+-    color: var(--text-muted) !important;
+-    font-size: 0.7rem !important;
+-    text-transform: uppercase !important;
+-    letter-spacing: 0.08em !important;
++#user-tools, #logout-form button {
++    text-transform: none;
++    letter-spacing: 0;
++    font-size: 0.8125rem;
++    font-weight: 400;
+ }
++#user-tools a { border-bottom: 0; text-decoration: underline; text-underline-offset: 0.2em; }
++
++div.breadcrumbs { border-bottom: 1px solid var(--hairline-color); }
+ 
+-/* CONTENT */
+-#content { background: var(--bg-dark) !important; }
+-#content h1 { color: var(--text) !important; border-bottom: 1px solid var(--border) !important; padding-bottom: 0.5rem !important; }
+-
+-/* MODULES */
+-.module { background: var(--bg-card) !important; border: 1px solid var(--border) !important; border-radius: 8px !important; overflow: hidden !important; }
+-.module h2, .module caption { background: var(--bg-card) !important; color: var(--text-muted) !important; border-bottom: 1px solid var(--border) !important; font-size: 0.75rem !important; text-transform: uppercase !important; letter-spacing: 0.06em !important; }
+-
+-/* TABLES */
+-#result_list thead th { background: var(--bg-card) !important; color: var(--text-muted) !important; border-bottom: 1px solid var(--border) !important; font-size: 0.75rem !important; text-transform: uppercase !important; }
+-#result_list tbody tr { background: var(--bg-dark) !important; border-bottom: 1px solid var(--border) !important; }
+-#result_list tbody tr:hover { background: var(--bg-card) !important; }
+-#result_list tbody td { color: var(--text) !important; }
+-#result_list tbody a { color: var(--accent) !important; }
+-
+-/* SUBMIT ROW */
+-.submit-row { background: var(--bg-card) !important; border: 1px solid var(--border) !important; border-radius: 8px !important; padding: 1rem !important; }
+-.submit-row input[type="submit"] { background: var(--primary) !important; border: none !important; border-radius: 6px !important; color: white !important; padding: 0.5rem 1.25rem !important; font-weight: 500 !important; cursor: pointer !important; }
+-.deletelink { background: #dc2626 !important; border-radius: 6px !important; padding: 0.5rem 1.25rem !important; color: white !important; }
+-
+-/* FILTERS */
+-#changelist-filter { background: var(--bg-card) !important; border: 1px solid var(--border) !important; border-radius: 8px !important; }
+-#changelist-filter h2 { background: var(--bg-card) !important; color: var(--text-muted) !important; border-bottom: 1px solid var(--border) !important; font-size: 0.7rem !important; text-transform: uppercase !important; }
+-#changelist-filter a { color: var(--text) !important; }
+-#changelist-filter a:hover { color: var(--accent) !important; }
+-#changelist-filter li.selected a { color: var(--accent) !important; font-weight: 600 !important; }
+-
+-/* PAGINATOR */
+-.paginator { background: var(--bg-card) !important; border-top: 1px solid var(--border) !important; color: var(--text-muted) !important; }
+-.paginator a { color: var(--accent) !important; }
+-
+-/* MESSAGES */
+-ul.messagelist li { border-radius: 6px !important; }
+-ul.messagelist li.success { background: #064e3b !important; color: #6ee7b7 !important; border: none !important; }
+-ul.messagelist li.error { background: #7f1d1d !important; color: #fca5a5 !important; border: none !important; }
+-
+-/* RELATED */
+-#content-related { background: var(--bg-sidebar) !important; border-left: 1px solid var(--border) !important; }
+-#recent-actions-module a { color: var(--accent) !important; }
+-
+-/* FIELDSETS */
+-fieldset { border: 1px solid var(--border) !important; border-radius: 8px !important; background: var(--bg-card) !important; }
+-fieldset h2 { color: var(--accent) !important; font-size: 0.75rem !important; border-bottom: 1px solid var(--border) !important; }
+-
+-/* CHECKBOX */
+-input[type="checkbox"] { accent-color: var(--primary) !important; }
+-
+-/* SELECTORES */
+-select {
+-    background: #0b0f19 !important;
+-    border: 1px solid #1e293b !important;
+-    color: #cbd5e1 !important;
+-    border-radius: 6px !important;
+-    padding: 0.4rem 0.6rem !important;
+-    min-width: 200px !important;
++/* ---------- Títulos de módulos y tablas: sin mayúsculas forzadas ---------- */
++
++.module h2,
++.module caption,
++.inline-group h2 {
++    background: var(--darkened-bg);
++    color: var(--body-fg);
++    border-bottom: 1px solid var(--hairline-color);
++    text-transform: none;
++    letter-spacing: 0;
++    font-size: 0.875rem;
++    font-weight: 700;
++    padding: 10px 12px;
++}
++.module caption a.section:link, .module caption a.section:visited { color: var(--body-fg); }
++#content-related .module h2 { background: none; border-bottom: 1px solid var(--hairline-color); }
++thead th, tfoot td, #changelist-filter h2, #changelist-filter h3, #nav-sidebar .module th,
++.object-tools a:link, .object-tools a:visited, h5 {
++    text-transform: none;
++    letter-spacing: 0;
+ }
++thead th { font-size: 0.8125rem; }
++.object-tools a:link, .object-tools a:visited { font-size: 0.8125rem; border-radius: 6px; }
++
++.module { border-radius: 8px; overflow: hidden; border: 1px solid var(--hairline-color); }
++#content-related .module { border: 0; }
++#content-related { background: var(--darkened-bg); border-radius: 8px; }
+ 
+-/* INPUTS TEXTO */
+-input[type="text"], input[type="password"], input[type="email"], input[type="number"], input[type="url"] {
+-    background: #0b0f19 !important;
+-    border: 1px solid #1e293b !important;
+-    color: #cbd5e1 !important;
+-    border-radius: 6px !important;
+-    padding: 0.4rem 0.6rem !important;
++/* ---------- Formularios ---------- */
++
++input[type=text], input[type=password], input[type=email], input[type=url],
++input[type=number], input[type=tel], input[type=search], textarea, select, .vTextField {
++    background: var(--pg-field-bg);
++    color: var(--body-fg);
++    border: 1px solid var(--border-color);
++    border-radius: 6px;
+ }
++input:focus, textarea:focus, select:focus { border-color: var(--link-fg); }
++:focus-visible { outline: 2px solid var(--link-fg); outline-offset: 2px; }
++input[type="checkbox"], input[type="radio"] { accent-color: var(--button-bg); }
++
++.button, input[type=submit], input[type=button], .submit-row input, a.button { border-radius: 6px; }
++.submit-row { border-radius: 8px; }
++.submit-row a.deletelink { border-radius: 6px; }
+ 
++/* ---------- Paneles propios ---------- */
+ 
++.pg-panel {
++    margin-top: 1.5rem;
++    background: var(--pg-surface);
++    border: 1px solid var(--hairline-color);
++    border-radius: 8px;
++    overflow: hidden;
++}
++.pg-panel-head {
++    display: flex; align-items: center; gap: 0.6rem;
++    padding: 0.75rem 1.25rem;
++    border-bottom: 1px solid var(--hairline-color);
++    background: var(--darkened-bg);
++    font-weight: 700; font-size: 0.9rem;
++    color: var(--body-fg);
++}
++.pg-panel-body { padding: 1.25rem; }
++.pg-panel textarea { width: 100%; padding: 0.85rem; margin-bottom: 1rem; resize: vertical; font-family: inherit; line-height: 1.6; font-size: 0.875rem; box-sizing: border-box; }
++.pg-panel .pg-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; }
++.pg-panel .pg-status { color: var(--body-quiet-color); font-size: 0.8125rem; margin: 0; }
++.pg-btn {
++    display: inline-flex; align-items: center; gap: 0.4rem;
++    padding: 0.5rem 1.1rem;
++    border: 0; border-radius: 6px;
++    font: inherit; font-weight: 700; font-size: 0.875rem;
++    cursor: pointer; text-decoration: none;
++}
++.pg-btn-linkedin, .pg-btn-linkedin:link, .pg-btn-linkedin:visited { background: #0A66C2; color: #FFFFFF; }
++.pg-btn-linkedin:hover { background: #004182; color: #FFFFFF; }
++.pg-btn-quiet { background: transparent; color: var(--body-fg); border: 1px solid var(--border-color); font-weight: 400; }
++.pg-btn-quiet:hover { border-color: var(--link-fg); color: var(--link-fg); }
++.pg-btn[disabled] { opacity: 0.6; cursor: progress; }
++.pg-empty { text-align: center; padding: 0.5rem 0 1rem; }
++.pg-empty p { color: var(--body-quiet-color); margin-bottom: 1rem; }
++.pg-panel .pg-row-end { justify-content: flex-end; margin-bottom: 0.6rem; }
++.pg-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+ 
+-/* MODO CLARO */
+-[data-theme="light"] body { background: #f8fafc !important; color: #334155 !important; }
+-[data-theme="light"] #header { background: #ffffff !important; border-bottom: 1px solid #e2e8f0 !important; }
+-[data-theme="light"] #branding h1 a { color: #334155 !important; }
+-[data-theme="light"] #user-tools a { color: #0284c7 !important; }
+-[data-theme="light"] div.breadcrumbs { background: #ffffff !important; border-bottom: 1px solid #e2e8f0 !important; color: #64748b !important; }
+-[data-theme="light"] #nav-sidebar { background: #ffffff !important; border-right: 1px solid #e2e8f0 !important; }
+-[data-theme="light"] .sidebar-sticky { background: #ffffff !important; }
+-[data-theme="light"] #nav-sidebar a { color: #475569 !important; }
+-[data-theme="light"] #nav-sidebar .module th { color: #94a3b8 !important; }
+-[data-theme="light"] #content { background: #f8fafc !important; }
+-[data-theme="light"] .module { background: #ffffff !important; border: 1px solid #e2e8f0 !important; }
+-[data-theme="light"] .module h2, [data-theme="light"] .module caption { background: #ffffff !important; color: #64748b !important; border-bottom: 1px solid #e2e8f0 !important; }
+-[data-theme="light"] #result_list thead th { background: #ffffff !important; color: #64748b !important; border-bottom: 1px solid #e2e8f0 !important; }
+-[data-theme="light"] #result_list tbody tr { background: #f8fafc !important; border-bottom: 1px solid #e2e8f0 !important; }
+-[data-theme="light"] #result_list tbody tr:hover { background: #ffffff !important; }
+-[data-theme="light"] #result_list tbody td { color: #334155 !important; }
+-[data-theme="light"] .submit-row { background: #ffffff !important; border: 1px solid #e2e8f0 !important; }
+-[data-theme="light"] select { background: #ffffff !important; border: 1px solid #e2e8f0 !important; color: #334155 !important; }
+-[data-theme="light"] input[type="text"], [data-theme="light"] input[type="password"], [data-theme="light"] input[type="email"], [data-theme="light"] input[type="number"], [data-theme="light"] input[type="url"] { background: #ffffff !important; border: 1px solid #e2e8f0 !important; color: #334155 !important; }
+-[data-theme="light"] fieldset { background: #ffffff !important; border: 1px solid #e2e8f0 !important; }
+-[data-theme="light"] #changelist-filter { background: #ffffff !important; border: 1px solid #e2e8f0 !important; }
+-[data-theme="light"] #content-related { background: #f8fafc !important; border-left: 1px solid #e2e8f0 !important; }
+-[data-theme="light"] #content h1 { color: #334155 !important; border-bottom: 1px solid #e2e8f0 !important; }
++/* Ajustes que necesitan más especificidad porque otras hojas del admin
++   (changelists.css, forms.css) se cargan después de esta */
++html #changelist-filter h2, html #changelist-filter h3 { text-transform: none; letter-spacing: 0; font-weight: 700; }
++html .submit-row input, html .submit-row input.default, html .submit-row a, html input[type=submit] { text-transform: none; letter-spacing: 0; font-weight: 700; }
++html #content-related .module h2 { font-size: 1rem; }
++#content a.pg-btn, #content a.pg-btn:link, #content a.pg-btn:visited, #content a.pg-btn:hover { text-decoration: none; }
+diff --git a/wiki/templates/admin/base_site.html b/wiki/templates/admin/base_site.html
+index 63e49d9..004bb6e 100644
+--- a/wiki/templates/admin/base_site.html
++++ b/wiki/templates/admin/base_site.html
+@@ -1,49 +1,24 @@
+ {% extends "admin/base.html" %}
+ {% load static %}
+ 
+-{% block title %}{{ title }} | Wiki Editor{% endblock %}
+-
+-{% block branding %}
+-<h1 id="site-name">
+-    <a href="{% url 'admin:index' %}" style="display:flex;align-items:center;gap:0.6rem;text-decoration:none;">
+-        <span style="background:#0284c7;color:white;padding:0.25rem 0.6rem;border-radius:6px;font-size:0.8rem;font-weight:700;">PG</span>
+-        <span style="color:white;font-size:1rem;font-weight:600;">Wiki Editor</span>
+-    </a>
+-</h1>
+-{% endblock %}
++{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | Wiki PG{% endblock %}
+ 
+ {% block extrastyle %}
+ {{ block.super }}
+-<link rel="stylesheet" href="{% static 'admin/css/custom_admin.css' %}">
+-<link rel="icon" type="image/x-icon" href="/media/favicon/favicon.ico">
+-<script>
+-    // Aplicar tema guardado antes de que cargue la página
+-    const theme = localStorage.getItem('admin_theme') || 'dark';
+-    document.documentElement.setAttribute('data-theme', theme);
+-</script>
++<link rel="preconnect" href="https://fonts.googleapis.com">
++<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
++<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;600&family=Atkinson+Hyperlegible+Next:ital,wght@0,400;0,700;1,400&display=swap">
++<link rel="stylesheet" href="{% static 'admin/css/custom_admin.css' %}?v=4">
++<link rel="icon" href="{% static 'favicon.ico' %}?v=4" sizes="any">
++<link rel="icon" href="{% static 'icons/favicon.svg' %}?v=4" type="image/svg+xml">
++<link rel="apple-touch-icon" href="{% static 'icons/apple-touch-icon.png' %}?v=4">
+ {% endblock %}
+ 
+-{% block usertools %}
+-{{ block.super }}
+-{% endblock %}
+-
+-{% block extrahead %}
+-{{ block.super }}
+-<script>
+-function toggleAdminTheme() {
+-    const html = document.documentElement;
+-    const current = html.getAttribute('data-theme');
+-    const next = current === 'dark' ? 'light' : 'dark';
+-    html.setAttribute('data-theme', next);
+-    localStorage.setItem('admin_theme', next);
+-    document.getElementById('theme-btn').textContent = next === 'dark' ? '🌙' : '☀️';
+-}
+-
+-document.addEventListener('DOMContentLoaded', function() {
+-    const theme = localStorage.getItem('admin_theme') || 'dark';
+-    document.documentElement.setAttribute('data-theme', theme);
+-    const btn = document.getElementById('theme-btn');
+-    if (btn) btn.textContent = theme === 'dark' ? '🌙' : '☀️';
+-});
+-</script>
++{% block branding %}
++<div id="site-name">
++    <a href="{% url 'admin:index' %}"><span class="pg-mark" aria-hidden="true">PG</span>Panel de la wiki</a>
++</div>
++{% if user.is_anonymous %}
++  {% include "admin/color_theme_toggle.html" %}
++{% endif %}
+ {% endblock %}
+diff --git a/wiki/templates/admin/wiki/article/change_form.html b/wiki/templates/admin/wiki/article/change_form.html
+index f509f63..3cd1a52 100644
+--- a/wiki/templates/admin/wiki/article/change_form.html
++++ b/wiki/templates/admin/wiki/article/change_form.html
+@@ -5,27 +5,24 @@
+ {{ block.super }}
+ 
+ {% if not hide_linkedin_panel %}
+-<div style="margin-top: 1.5rem; background: #0f1629; border: 1px solid #1e293b; border-radius: 12px; overflow: hidden;">
+-    <div style="padding: 0.75rem 1.25rem; border-bottom: 1px solid #1e293b; display: flex; align-items: center; gap: 0.6rem;">
+-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="#0a66c2"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+-        <span style="color: #e2e8f0; font-weight: 600; font-size: 0.9rem;">Publicar en LinkedIn</span>
++<div class="pg-panel">
++    <div class="pg-panel-head">
++        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="#0a66c2"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
++        <span>Publicar en LinkedIn</span>
+     </div>
+ 
+-    <div style="padding: 1.25rem;">
++    <div class="pg-panel-body">
+         {% if linkedin_connected %}
+         <form method="post" action="/linkedin/post/{{ article_id }}/" id="linkedin-form">
+             {% csrf_token %}
+-            <div style="display: flex; justify-content: flex-end; margin-bottom: 0.6rem;">
+-                <button type="button" id="generate-ai-btn" onclick="generateLinkedInText()" style="padding: 0.4rem 0.9rem; background: #6366f1; color: white; border: none; border-radius: 6px; font-size: 0.8rem; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 0.4rem;">
+-                    ✨ Generar con IA
+-                </button>
++            <div class="pg-row pg-row-end">
++                <button type="button" id="generate-ai-btn" class="pg-btn pg-btn-quiet" onclick="generateLinkedInText()">Generar texto con IA</button>
+             </div>
+-            <textarea name="text" id="linkedin-textarea" rows="5" style="width: 100%; padding: 0.85rem; background: #0b0f19; border: 1px solid #1e293b; border-radius: 8px; color: #cbd5e1; font-size: 0.85rem; margin-bottom: 1rem; resize: vertical; font-family: inherit; line-height: 1.6;">{{ original.linkedin_text }}</textarea>
+-            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
+-                <p id="ai-status" style="color: #64748b; font-size: 0.8rem; margin: 0;"></p>
+-                <button type="submit" style="padding: 0.5rem 1.5rem; background: #0a66c2; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.875rem;">
+-                    Publicar ahora
+-                </button>
++            <label for="linkedin-textarea" class="pg-sr">Texto de la publicación</label>
++            <textarea name="text" id="linkedin-textarea" rows="5">{{ original.linkedin_text }}</textarea>
++            <div class="pg-row">
++                <p id="ai-status" class="pg-status" role="status"></p>
++                <button type="submit" class="pg-btn pg-btn-linkedin">Publicar en LinkedIn ahora</button>
+             </div>
+         </form>
+         <script>
+@@ -34,8 +31,8 @@
+             const status = document.getElementById('ai-status');
+             const textarea = document.getElementById('linkedin-textarea');
+             btn.disabled = true;
+-            btn.textContent = 'Generando...';
+-            status.textContent = 'Esto puede tardar unos segundos...';
++            btn.textContent = 'Generando texto…';
++            status.textContent = 'Suele tardar unos segundos.';
+ 
+             fetch('/linkedin/generate/{{ article_id }}/', {
+                 method: 'POST',
+@@ -47,24 +44,24 @@
+             .then(data => {
+                 if (data.text) {
+                     textarea.value = data.text;
+-                    status.textContent = 'Texto generado, revísalo antes de publicar';
++                    status.textContent = 'Texto generado. Revísalo antes de publicar.';
+                 } else {
+-                    status.textContent = 'Error: ' + (data.error || 'desconocido');
++                    status.textContent = 'No se pudo generar el texto: ' + (data.error || 'el servidor no dio detalles') + '.';
+                 }
+             })
+             .catch(e => {
+-                status.textContent = 'Error de conexión: ' + e;
++                status.textContent = 'No se pudo contactar con el servidor (' + e + '). Comprueba la conexión y vuelve a intentarlo.';
+             })
+             .finally(() => {
+                 btn.disabled = false;
+-                btn.textContent = '✨ Generar con IA';
++                btn.textContent = 'Generar texto con IA';
+             });
+         }
+         </script>
+         {% else %}
+-        <div style="text-align: center; padding: 1rem;">
+-            <p style="color: #64748b; margin-bottom: 1rem; font-size: 0.875rem;">No hay sesión activa de LinkedIn.</p>
+-            <a href="/linkedin/auth/" style="padding: 0.6rem 1.5rem; background: #0a66c2; color: white; border-radius: 8px; font-weight: 600; text-decoration: none; font-size: 0.875rem;">
++        <div class="pg-empty">
++            <p>LinkedIn no está conectado, así que no se puede publicar desde aquí.</p>
++            <a href="/linkedin/auth/" class="pg-btn pg-btn-linkedin">
+                 Conectar con LinkedIn
+             </a>
+         </div>
+diff --git a/wiki/templates/two_factor/_base.html b/wiki/templates/two_factor/_base.html
+index 03db920..bf6b58c 100644
+--- a/wiki/templates/two_factor/_base.html
++++ b/wiki/templates/two_factor/_base.html
+@@ -1,101 +1,75 @@
+-<!DOCTYPE html>
+-<html lang="es" data-theme="dark">
++{% load static %}<!DOCTYPE html>
++<html lang="es">
+ <head>
+     <meta charset="UTF-8">
+     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+-    <title>Login - Wiki PG</title>
+-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
++    <title>Acceso al panel - Wiki PG</title>
++    <script>
++        (function () {
++            var t = null;
++            try { t = localStorage.getItem('theme'); } catch (e) {}
++            if (t !== 'light' && t !== 'dark') t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
++            document.documentElement.setAttribute('data-theme', t);
++        })();
++    </script>
++    <link rel="preconnect" href="https://fonts.googleapis.com">
++    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
++    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;600&family=Atkinson+Hyperlegible+Next:wght@400;700&display=swap">
++    <link rel="stylesheet" href="{% static 'css/wiki.css' %}?v=4">
++    <link rel="icon" href="{% static 'favicon.ico' %}?v=4" sizes="any">
++    <link rel="icon" href="{% static 'icons/favicon.svg' %}?v=4" type="image/svg+xml">
+     <style>
+-        * { margin: 0; padding: 0; box-sizing: border-box; }
+-        body {
+-            font-family: 'Inter', sans-serif;
+-            background: #0b0f19;
+-            color: #cbd5e1;
+-            min-height: 100vh;
+-            display: flex;
+-            align-items: center;
+-            justify-content: center;
+-        }
++        body { align-items: center; justify-content: center; padding: 1.5rem 1rem; }
+         .login-container {
+-            background: #151b2c;
+-            border: 1px solid #1e293b;
+-            border-radius: 16px;
+-            padding: 2.5rem;
+-            width: 100%;
+-            max-width: 420px;
+-            box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+-        }
+-        .login-logo {
+-            display: flex;
+-            align-items: center;
+-            gap: 0.75rem;
+-            margin-bottom: 2rem;
+-        }
+-        .login-logo-badge {
+-            background: #0284c7;
+-            color: white;
+-            padding: 0.4rem 0.75rem;
+-            border-radius: 8px;
+-            font-size: 1rem;
+-            font-weight: 700;
++            width: 100%; max-width: 420px;
++            background: var(--surface);
++            border: 1px solid var(--line);
++            border-radius: 10px;
++            padding: 2rem;
+         }
+-        .login-logo-text {
+-            font-size: 1.2rem;
+-            font-weight: 600;
+-            color: #e2e8f0;
+-        }
+-        h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.5rem; color: #e2e8f0; }
+-        p { color: #64748b; font-size: 0.875rem; margin-bottom: 1.5rem; }
+-        label { display: block; font-size: 0.8rem; font-weight: 500; color: #94a3b8; margin-bottom: 0.4rem; }
+-        input[type="text"], input[type="password"], input[type="number"] {
++        .login-logo { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.75rem; font-weight: 700; font-size: 1.05rem; color: var(--ink); text-decoration: none; }
++        .login-container h1 { font-size: var(--fs-2); line-height: 1.2; margin-bottom: 0.5rem; }
++        .login-container p { color: var(--ink-2); font-size: 0.95rem; margin-bottom: 1.25rem; }
++        .login-container label { display: block; font-size: 0.875rem; font-weight: 700; color: var(--ink); margin-bottom: 0.35rem; }
++        .login-container input[type="text"], .login-container input[type="password"],
++        .login-container input[type="number"], .login-container input[type="email"], .login-container input[type="tel"] {
+             width: 100%;
+-            padding: 0.75rem 1rem;
+-            background: #0b0f19;
+-            border: 1px solid #1e293b;
+-            border-radius: 8px;
+-            color: #e2e8f0;
+-            font-size: 0.875rem;
++            padding: 0.7rem 0.85rem;
++            background: var(--bg);
++            border: 1px solid var(--line-strong);
++            border-radius: 6px;
++            color: var(--ink);
++            font: inherit;
+             margin-bottom: 1rem;
+-            transition: border 0.2s;
+         }
+-        input:focus { outline: none; border-color: #0284c7; }
+-        .btn-primary {
++        .login-container input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
++        .btn-primary, .login-container button[type="submit"] {
+             width: 100%;
+             padding: 0.75rem;
+-            background: #0284c7;
+-            color: white;
+-            border: none;
+-            border-radius: 8px;
+-            font-size: 0.95rem;
+-            font-weight: 600;
++            background: var(--accent); color: var(--accent-ink);
++            border: 0; border-radius: 6px;
++            font: inherit; font-weight: 700;
+             cursor: pointer;
+-            transition: background 0.2s;
+         }
+-        .btn-primary:hover { background: #0369a1; }
+-        .btn-secondary {
++        .btn-primary:hover, .login-container button[type="submit"]:hover { filter: brightness(1.08); }
++        .btn-secondary, .login-container button.btn-secondary {
+             width: 100%;
+-            padding: 0.75rem;
+-            background: transparent;
+-            color: #64748b;
+-            border: 1px solid #1e293b;
+-            border-radius: 8px;
+-            font-size: 0.875rem;
+-            cursor: pointer;
++            padding: 0.7rem;
+             margin-top: 0.5rem;
+-            transition: all 0.2s;
++            background: transparent; color: var(--ink-2);
++            border: 1px solid var(--line-strong); border-radius: 6px;
++            font: inherit;
++            cursor: pointer;
+         }
+-        .btn-secondary:hover { border-color: #0284c7; color: #0284c7; }
+-        .errorlist { color: #ef4444; font-size: 0.8rem; margin-bottom: 1rem; list-style: none; }
+-        a { color: #0284c7; text-decoration: none; }
++        .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
++        .errorlist { color: #C4320A; font-size: 0.875rem; margin-bottom: 1rem; list-style: none; }
++        :root[data-theme="dark"] .errorlist { color: #F28B82; }
+     </style>
+ </head>
+ <body>
+-    <div class="login-container">
+-        <div class="login-logo">
+-            <span class="login-logo-badge">PG</span>
+-            <span class="login-logo-text">Wiki PG</span>
+-        </div>
++    <main class="login-container">
++        <a class="login-logo" href="/"><span class="brand-mark" aria-hidden="true">PG</span>Wiki PG</a>
+         {% block content %}{% endblock %}
+-    </div>
++    </main>
+ </body>
+ </html>
+-- 
+2.43.0
+
