@@ -1,101 +1,75 @@
-<!DOCTYPE html>
-<html lang="es" data-theme="dark">
+{% load static %}<!DOCTYPE html>
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Wiki PG</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <title>Acceso al panel - Wiki PG</title>
+    <script>
+        (function () {
+            var t = null;
+            try { t = localStorage.getItem('theme'); } catch (e) {}
+            if (t !== 'light' && t !== 'dark') t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', t);
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;600&family=Atkinson+Hyperlegible+Next:wght@400;700&display=swap">
+    <link rel="stylesheet" href="{% static 'css/wiki.css' %}?v=4">
+    <link rel="icon" href="{% static 'favicon.ico' %}?v=4" sizes="any">
+    <link rel="icon" href="{% static 'icons/favicon.svg' %}?v=4" type="image/svg+xml">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Inter', sans-serif;
-            background: #0b0f19;
-            color: #cbd5e1;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
+        body { align-items: center; justify-content: center; padding: 1.5rem 1rem; }
         .login-container {
-            background: #151b2c;
-            border: 1px solid #1e293b;
-            border-radius: 16px;
-            padding: 2.5rem;
+            width: 100%; max-width: 420px;
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 2rem;
+        }
+        .login-logo { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.75rem; font-weight: 700; font-size: 1.05rem; color: var(--ink); text-decoration: none; }
+        .login-container h1 { font-size: var(--fs-2); line-height: 1.2; margin-bottom: 0.5rem; }
+        .login-container p { color: var(--ink-2); font-size: 0.95rem; margin-bottom: 1.25rem; }
+        .login-container label { display: block; font-size: 0.875rem; font-weight: 700; color: var(--ink); margin-bottom: 0.35rem; }
+        .login-container input[type="text"], .login-container input[type="password"],
+        .login-container input[type="number"], .login-container input[type="email"], .login-container input[type="tel"] {
             width: 100%;
-            max-width: 420px;
-            box-shadow: 0 12px 32px rgba(0,0,0,0.5);
-        }
-        .login-logo {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            margin-bottom: 2rem;
-        }
-        .login-logo-badge {
-            background: #0284c7;
-            color: white;
-            padding: 0.4rem 0.75rem;
-            border-radius: 8px;
-            font-size: 1rem;
-            font-weight: 700;
-        }
-        .login-logo-text {
-            font-size: 1.2rem;
-            font-weight: 600;
-            color: #e2e8f0;
-        }
-        h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.5rem; color: #e2e8f0; }
-        p { color: #64748b; font-size: 0.875rem; margin-bottom: 1.5rem; }
-        label { display: block; font-size: 0.8rem; font-weight: 500; color: #94a3b8; margin-bottom: 0.4rem; }
-        input[type="text"], input[type="password"], input[type="number"] {
-            width: 100%;
-            padding: 0.75rem 1rem;
-            background: #0b0f19;
-            border: 1px solid #1e293b;
-            border-radius: 8px;
-            color: #e2e8f0;
-            font-size: 0.875rem;
+            padding: 0.7rem 0.85rem;
+            background: var(--bg);
+            border: 1px solid var(--line-strong);
+            border-radius: 6px;
+            color: var(--ink);
+            font: inherit;
             margin-bottom: 1rem;
-            transition: border 0.2s;
         }
-        input:focus { outline: none; border-color: #0284c7; }
-        .btn-primary {
+        .login-container input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+        .btn-primary, .login-container button[type="submit"] {
             width: 100%;
             padding: 0.75rem;
-            background: #0284c7;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 0.95rem;
-            font-weight: 600;
+            background: var(--accent); color: var(--accent-ink);
+            border: 0; border-radius: 6px;
+            font: inherit; font-weight: 700;
             cursor: pointer;
-            transition: background 0.2s;
         }
-        .btn-primary:hover { background: #0369a1; }
-        .btn-secondary {
+        .btn-primary:hover, .login-container button[type="submit"]:hover { filter: brightness(1.08); }
+        .btn-secondary, .login-container button.btn-secondary {
             width: 100%;
-            padding: 0.75rem;
-            background: transparent;
-            color: #64748b;
-            border: 1px solid #1e293b;
-            border-radius: 8px;
-            font-size: 0.875rem;
-            cursor: pointer;
+            padding: 0.7rem;
             margin-top: 0.5rem;
-            transition: all 0.2s;
+            background: transparent; color: var(--ink-2);
+            border: 1px solid var(--line-strong); border-radius: 6px;
+            font: inherit;
+            cursor: pointer;
         }
-        .btn-secondary:hover { border-color: #0284c7; color: #0284c7; }
-        .errorlist { color: #ef4444; font-size: 0.8rem; margin-bottom: 1rem; list-style: none; }
-        a { color: #0284c7; text-decoration: none; }
+        .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+        .errorlist { color: #C4320A; font-size: 0.875rem; margin-bottom: 1rem; list-style: none; }
+        :root[data-theme="dark"] .errorlist { color: #F28B82; }
     </style>
 </head>
 <body>
-    <div class="login-container">
-        <div class="login-logo">
-            <span class="login-logo-badge">PG</span>
-            <span class="login-logo-text">Wiki PG</span>
-        </div>
+    <main class="login-container">
+        <a class="login-logo" href="/"><span class="brand-mark" aria-hidden="true">PG</span>Wiki PG</a>
         {% block content %}{% endblock %}
-    </div>
+    </main>
 </body>
 </html>

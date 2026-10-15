@@ -1,49 +1,24 @@
 {% extends "admin/base.html" %}
 {% load static %}
 
-{% block title %}{{ title }} | Wiki Editor{% endblock %}
-
-{% block branding %}
-<h1 id="site-name">
-    <a href="{% url 'admin:index' %}" style="display:flex;align-items:center;gap:0.6rem;text-decoration:none;">
-        <span style="background:#0284c7;color:white;padding:0.25rem 0.6rem;border-radius:6px;font-size:0.8rem;font-weight:700;">PG</span>
-        <span style="color:white;font-size:1rem;font-weight:600;">Wiki Editor</span>
-    </a>
-</h1>
-{% endblock %}
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | Wiki PG{% endblock %}
 
 {% block extrastyle %}
 {{ block.super }}
-<link rel="stylesheet" href="{% static 'admin/css/custom_admin.css' %}">
-<link rel="icon" type="image/x-icon" href="/media/favicon/favicon.ico">
-<script>
-    // Aplicar tema guardado antes de que cargue la página
-    const theme = localStorage.getItem('admin_theme') || 'dark';
-    document.documentElement.setAttribute('data-theme', theme);
-</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;600&family=Atkinson+Hyperlegible+Next:ital,wght@0,400;0,700;1,400&display=swap">
+<link rel="stylesheet" href="{% static 'admin/css/custom_admin.css' %}?v=4">
+<link rel="icon" href="{% static 'favicon.ico' %}?v=4" sizes="any">
+<link rel="icon" href="{% static 'icons/favicon.svg' %}?v=4" type="image/svg+xml">
+<link rel="apple-touch-icon" href="{% static 'icons/apple-touch-icon.png' %}?v=4">
 {% endblock %}
 
-{% block usertools %}
-{{ block.super }}
-{% endblock %}
-
-{% block extrahead %}
-{{ block.super }}
-<script>
-function toggleAdminTheme() {
-    const html = document.documentElement;
-    const current = html.getAttribute('data-theme');
-    const next = current === 'dark' ? 'light' : 'dark';
-    html.setAttribute('data-theme', next);
-    localStorage.setItem('admin_theme', next);
-    document.getElementById('theme-btn').textContent = next === 'dark' ? '🌙' : '☀️';
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-    const theme = localStorage.getItem('admin_theme') || 'dark';
-    document.documentElement.setAttribute('data-theme', theme);
-    const btn = document.getElementById('theme-btn');
-    if (btn) btn.textContent = theme === 'dark' ? '🌙' : '☀️';
-});
-</script>
+{% block branding %}
+<div id="site-name">
+    <a href="{% url 'admin:index' %}"><span class="pg-mark" aria-hidden="true">PG</span>Panel de la wiki</a>
+</div>
+{% if user.is_anonymous %}
+  {% include "admin/color_theme_toggle.html" %}
+{% endif %}
 {% endblock %}
