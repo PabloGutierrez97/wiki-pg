@@ -6,9 +6,35 @@ import json
 import re
 
 from .models import Article, Category, Profile
+import hashlib
+import math
 import os
+import time
+import unicodedata
 import urllib.request
+from array import array
 from django.core.cache import cache
+
+from .security import (
+    RespuestaLiberable, client_ip, excede_limite,
+    reservar_plaza_ia, reservar_turno_ip,
+)
+
+# Límites de la IA (por visitante). La concurrencia global va en settings.AI_MAX_CONCURRENT.
+ASK_POR_MINUTO = 5
+ASK_POR_HORA = 30
+# Comandos normales del terminal (ls, cat, tree...): baratos, pero sin límite se pueden encadenar.
+CMD_POR_MINUTO = 60
+# Peticiones del terminal: una pregunta de 300 caracteres cabe de sobra en 4 KB.
+MAX_BODY = 4096
+# Respuestas idénticas se sirven desde caché durante este tiempo.
+ASK_CACHE_SEG = 15 * 60
+
+MSG_RAPIDO = "[[amarillo]]Vas muy rapido.[[/]] Espera un poco antes de volver a preguntar."
+MSG_EN_CURSO = "[[amarillo]]Ya tienes una pregunta en curso.[[/]] Espera a que termine la respuesta."
+MSG_OCUPADA = ("[[amarillo]]La IA esta atendiendo a otras personas ahora mismo.[[/]] "
+               "Vuelve a preguntar en unos segundos.")
+MSG_NO_DISPONIBLE = "[[rojo]]La IA no esta disponible ahora mismo.[[/]] Intentalo de nuevo en un momento."
 
 
 def _cmd_help():
@@ -234,22 +260,23 @@ def _cmd_wikis():
     return "\n".join(lineas).rstrip()
 
 
-def _embed(texto):
+def _embed(texto, timeout=30, intentos=2):
+    """Embedding con bge-m3. Para preguntas en vivo se llama con timeout corto y sin reintentos."""
     url = os.getenv('OLLAMA_URL', 'http://192.168.0.183:11434').rstrip('/') + '/api/embeddings'
     modelo = os.getenv('OLLAMA_EMBED_MODEL', 'bge-m3')
     payload = json.dumps({"model": modelo, "prompt": (texto or '')[:3000], "keep_alive": "5m"}).encode('utf-8')
-    import time as _time
-    for _i in range(2):
+    for _i in range(intentos):
         try:
             req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read().decode('utf-8'))
             emb = data.get('embedding')
             if emb:
                 return emb
         except Exception:
             pass
-        _time.sleep(0.8)
+        if _i + 1 < intentos:
+            time.sleep(0.8)
     return None
 
 
@@ -312,23 +339,51 @@ def _coseno(a, b):
     return s / (math.sqrt(na) * math.sqrt(nb))
 
 
+# Vectores de los fragmentos ya parseados, por proceso. Antes se parseaban los
+# ~550 JSON de 1024 números en cada pregunta (CPU pura); ahora solo cuando
+# cambia el índice (nuevo id máximo o distinto número de fragmentos).
+_EMB_MEMO = {'version': None, 'items': []}
+
+
+def _vectores_indexados():
+    from django.db.models import Count, Max
+    from .models import ArticleChunk
+    qs = ArticleChunk.objects.exclude(embedding='')
+    agg = qs.aggregate(maximo=Max('id'), total=Count('id'))
+    version = (agg['maximo'], agg['total'])
+    if _EMB_MEMO['version'] != version:
+        items = []
+        for cid, aid, emb in qs.values_list('id', 'article_id', 'embedding'):
+            try:
+                vec = array('d', json.loads(emb))
+            except Exception:
+                continue
+            norma = math.sqrt(sum(x * x for x in vec))
+            if norma:
+                items.append((cid, aid, vec, norma))
+        _EMB_MEMO['items'] = items
+        _EMB_MEMO['version'] = version
+    return _EMB_MEMO['items']
+
+
 def _buscar_semantico(pregunta, k=4):
-    qemb = _embed(pregunta)
+    qemb = _embed(pregunta, timeout=10, intentos=1)
     if not qemb:
         return []
-    import json as _json
+    qnorma = math.sqrt(sum(x * x for x in qemb))
+    if not qnorma:
+        return []
     from .models import ArticleChunk
-    res = []
-    for c in ArticleChunk.objects.exclude(embedding='').select_related('article', 'article__category'):
-        if not c.article.is_published:
-            continue
-        try:
-            emb = _json.loads(c.embedding)
-        except Exception:
-            continue
-        res.append((c, _coseno(qemb, emb)))
-    res.sort(key=lambda t: t[1], reverse=True)
-    return res[:k]
+    publicados = set(Article.objects.filter(is_published=True).values_list('id', flat=True))
+    puntuados = []
+    for cid, aid, vec, norma in _vectores_indexados():
+        if aid in publicados:
+            puntuados.append((sum(a * b for a, b in zip(qemb, vec)) / (qnorma * norma), cid))
+    puntuados.sort(reverse=True)
+    top = puntuados[:k]
+    objs = ArticleChunk.objects.filter(id__in=[cid for _, cid in top]).select_related('article', 'article__category')
+    por_id = {c.id: c for c in objs}
+    return [(por_id[cid], score) for score, cid in top if cid in por_id]
 
 
 def _articulo_relevante(pregunta):
@@ -433,76 +488,163 @@ def _contexto_ask(pregunta, request):
     return system, art_rel
 
 
+def _normalizar(texto):
+    return ''.join(ch for ch in unicodedata.normalize('NFD', (texto or '').lower())
+                   if unicodedata.category(ch) != 'Mn')
+
+
+def _clave_respuesta(pregunta):
+    norm = ' '.join(_normalizar(pregunta).split())
+    return 'ai:resp:' + hashlib.sha256(norm.encode('utf-8')).hexdigest()
+
+
+def _cache_get(clave):
+    try:
+        return cache.get(clave)
+    except Exception:
+        return None
+
+
+def _cache_set(clave, valor, segundos):
+    try:
+        cache.set(clave, valor, segundos)
+    except Exception:
+        pass
+
+
+def _leer_json(request):
+    """Cuerpo JSON del terminal, acotado a MAX_BODY. None si no es valido."""
+    try:
+        longitud = int(request.META.get('CONTENT_LENGTH') or 0)
+    except ValueError:
+        return None
+    if longitud > MAX_BODY:
+        return None
+    try:
+        data = json.loads(request.body or b'{}')
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _limite_ask(ip):
+    """Mensaje si el visitante pregunta demasiado rapido, o None."""
+    if (excede_limite('ask:min:' + ip, ASK_POR_MINUTO, 60)
+            or excede_limite('ask:hora:' + ip, ASK_POR_HORA, 3600)):
+        return MSG_RAPIDO
+    return None
+
+
+def _respuesta_determinista(pregunta):
+    """Preguntas sobre datos o sobre la propia IA: se contestan sin el modelo."""
+    _pl = _normalizar(pregunta)
+    if (any(k in _pl for k in ['ultim', 'reciente', 'last', 'latest', 'nuevo']) and
+            any(k in _pl for k in ['articulo', 'post', 'entrada', 'publicad', 'subi'])):
+        _u = Article.objects.filter(is_published=True).order_by('-created_at').first()
+        if _u:
+            return ("[[verde]]IA[[/]] [[gris]].[[/]] El ultimo articulo publicado es [[azul]]" + _u.title +
+                    "[[/]], del " + _u.created_at.strftime('%d/%m/%Y') + ".\n\n[[gris]]Leer:[[/]] /article/" + _u.slug + "/")
+
+    if any(k in _pl for k in ['como funcionas', 'como trabajas', 'como estas hecha', 'como estas programad', 'como estas construid', 'como estas basad', 'estas configurad', 'te configuraron', 'fuiste configurad', 'como te configuraron', 'te programaron', 'te han programado', 'te hicieron', 'te crearon', 'te construyeron', 'te desarrollaron', 'te montaron', 'que modelo eres', 'que modelo usas', 'que ia eres', 'con que estas hecha', 'en que estas basad', 'como te programaron', 'como te hicieron', 'como te crearon']):
+        return ("[[verde]]IA[[/]] [[gris]].[[/]] Funciono con un modelo de lenguaje [[azul]]Llama 3.2[[/]] ejecutandose en local a traves de [[azul]]Ollama[[/]], sin depender de ninguna API externa. "
+                "Para responder sobre la wiki uso un sistema RAG: busco los fragmentos mas relevantes de los articulos con embeddings ([[azul]]bge-m3[[/]]) y similitud coseno, y se los paso al modelo. "
+                "Todo esta montado sobre [[azul]]Django[[/]], que hace de proxy seguro hacia el servidor de IA, y la respuesta te llega en streaming.")
+
+    if any(k in _pl for k in ['coseno', 'embedding', 'como funciona el rag', 'que es el rag', 'como encuentras los articulos', 'como buscas los articulos', 'como recuperas']):
+        return ("[[verde]]IA[[/]] [[gris]].[[/]] La [[azul]]similitud coseno[[/]] mide lo parecidos que son dos textos por su significado. Primero convierto tu pregunta y cada fragmento de los articulos en un vector de numeros (un embedding de 1024 dimensiones con bge-m3) que representa su sentido. "
+                "Luego calculo el coseno del angulo entre el vector de tu pregunta y el de cada fragmento: va de 0 (nada que ver) a 1 (practicamente el mismo tema). "
+                "Me quedo con los fragmentos de mayor puntuacion y se los paso al modelo. Lo bueno es que compara el significado, no las palabras exactas: por eso 'copiar archivos a la nube' encuentra el articulo de rclone aunque no digas 'rclone'.")
+    return None
+
+
+def _payload_ollama(pregunta, system, stream):
+    return json.dumps({
+        "model": os.getenv('OLLAMA_MODEL', 'llama3.2:3b'),
+        "prompt": pregunta,
+        "system": system,
+        "stream": stream,
+        "keep_alive": "30m",
+        "options": {"temperature": 0.3, "top_p": 0.9, "repeat_penalty": 1.1, "num_predict": 450}
+    }).encode('utf-8')
+
+
+def _url_ollama():
+    return os.getenv('OLLAMA_URL', 'http://192.168.0.183:11434').rstrip('/') + '/api/generate'
+
+
+def _enlace(pregunta, art_rel):
+    if _pregunta_identidad(pregunta):
+        return "\n\n[[gris]]Para saber mas, escribe[[/]] [[amarillo]]stack[[/]] [[gris]]o[[/]] [[amarillo]]whoami[[/]][[gris]].[[/]]"
+    return ("\n\n[[gris]]Leer:[[/]] /article/" + art_rel.slug + "/") if art_rel else ""
+
+
 def _cmd_ask(arg, request):
+    """ask por /terminal/cmd/ (sin streaming). Mismas puertas que terminal_ask."""
     pregunta = (arg or '').strip()
     if not pregunta:
         return "Uso: [[amarillo]]ask <pregunta>[[/]]  (ej: ask que es rclone?)"
     if len(pregunta) > 300:
         return "[[rojo]]La pregunta es demasiado larga[[/]] (maximo 300 caracteres)."
 
-    xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
-    ip = (request.META.get('HTTP_CF_CONNECTING_IP')
-          or (xff.split(',')[0].strip() if xff else '')
-          or request.META.get('REMOTE_ADDR', 'anon'))
-    rl_key = 'ask_rl_' + ip
+    ip = client_ip(request)
+    aviso = _limite_ask(ip)
+    if aviso:
+        return aviso
+    determinista = _respuesta_determinista(pregunta)
+    if determinista:
+        return determinista
+    clave = _clave_respuesta(pregunta)
+    guardada = _cache_get(clave)
+    if guardada:
+        return guardada
+
+    turno = reservar_turno_ip(ip)
+    if not turno:
+        return MSG_EN_CURSO
+    plaza = reservar_plaza_ia()
+    if not plaza:
+        turno.liberar()
+        return MSG_OCUPADA
     try:
-        usos = cache.get(rl_key, 0)
-        if usos >= 6:
-            return "[[amarillo]]Vas muy rapido.[[/]] Espera un minuto antes de volver a preguntar."
-        cache.set(rl_key, usos + 1, 60)
-    except Exception:
-        pass
+        system, art_rel = _contexto_ask(pregunta, request)
+        try:
+            req = urllib.request.Request(_url_ollama(), data=_payload_ollama(pregunta, system, False),
+                                         headers={'Content-Type': 'application/json'})
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+            respuesta = (data.get('response') or '').strip()
+        except Exception:
+            return MSG_NO_DISPONIBLE
 
-    system, art_rel = _contexto_ask(pregunta, request)
-
-
-    url = os.getenv('OLLAMA_URL', 'http://192.168.0.183:11434').rstrip('/') + '/api/generate'
-    modelo = os.getenv('OLLAMA_MODEL', 'llama3.2:3b')
-    payload = json.dumps({
-        "model": modelo,
-        "prompt": pregunta,
-        "system": system,
-        "stream": False,
-        "keep_alive": "30m",
-        "options": {"temperature": 0.3, "top_p": 0.9, "repeat_penalty": 1.1, "num_predict": 450}
-    }).encode('utf-8')
-
-    try:
-        req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
-        with urllib.request.urlopen(req, timeout=25) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
-        respuesta = (data.get('response') or '').strip()
-    except Exception:
-        return "[[rojo]]La IA no esta disponible ahora mismo.[[/]] Intentalo de nuevo en un momento."
-
-    if not respuesta:
-        return "No he podido generar una respuesta. Prueba a reformular la pregunta."
-    import re as _re
-    _resp = []
-    for _ln in respuesta.split("\n"):
-        if _re.match(r'(?i)^\s*leer\s*:?\s*(/article/\S*)?\s*$', _ln):
-            continue
-        _resp.append(_re.sub(r'/article/\S*', '', _ln))
-    respuesta = "\n".join(_resp).strip()
-    if not respuesta:
-        respuesta = "Te recomiendo este articulo:"
-    salida = "[[verde]]IA[[/]] [[gris]].[[/]] " + respuesta
-    if art_rel:
-        salida += "\n\n[[gris]]Leer:[[/]] /article/" + art_rel.slug + "/"
-    return salida
+        if not respuesta:
+            return "No he podido generar una respuesta. Prueba a reformular la pregunta."
+        _resp = []
+        for _ln in respuesta.split("\n"):
+            if re.match(r'(?i)^\s*leer\s*:?\s*(/article/\S*)?\s*$', _ln):
+                continue
+            _resp.append(re.sub(r'/article/\S*', '', _ln))
+        respuesta = "\n".join(_resp).strip() or "Te recomiendo este articulo:"
+        salida = "[[verde]]IA[[/]] [[gris]].[[/]] " + respuesta + _enlace(pregunta, art_rel)
+        _cache_set(clave, salida, ASK_CACHE_SEG)
+        return salida
+    finally:
+        plaza.liberar()
+        turno.liberar()
 
 
 @csrf_exempt
 @require_POST
 def terminal_command(request):
-    try:
-        data = json.loads(request.body)
-        raw = (data.get('command') or '').strip()
-    except Exception:
-        return JsonResponse({'output': 'Error en la peticion.'})
+    data = _leer_json(request)
+    if data is None:
+        return JsonResponse({'output': 'Error en la peticion.'}, status=400)
+    raw = (data.get('command') or '').strip()[:400]
 
     if not raw:
         return JsonResponse({'output': ''})
+
+    if excede_limite('cmd:min:' + client_ip(request), CMD_POR_MINUTO, 60):
+        return JsonResponse({'output': MSG_RAPIDO}, status=429)
 
     partes = raw.split(maxsplit=1)
     cmd = partes[0].lower()
@@ -547,12 +689,15 @@ def terminal_command(request):
 
 
 def _stream_texto(texto):
+    """Escribe el texto poco a poco (efecto terminal) sin retener el worker mas de ~1 s."""
     from django.http import StreamingHttpResponse
-    import time as _t, re as _re
+    trozos = re.findall(r'\S+\s*', texto)
+    pausa = min(0.03, 1.0 / max(1, len(trozos)))
+
     def _gen():
-        for _p in _re.findall(r'\S+\s*', texto):
+        for _p in trozos:
             yield _p
-            _t.sleep(0.03)
+            time.sleep(pausa)
     _r = StreamingHttpResponse(_gen(), content_type='text/plain; charset=utf-8')
     _r['X-Accel-Buffering'] = 'no'
     _r['Cache-Control'] = 'no-cache'
@@ -562,12 +707,21 @@ def _stream_texto(texto):
 @csrf_exempt
 @require_POST
 def terminal_ask(request):
-    from django.http import StreamingHttpResponse, HttpResponse
-    try:
-        data = json.loads(request.body)
-        pregunta = (data.get('command') or '').strip()
-    except Exception:
-        pregunta = ''
+    """Pregunta a la IA con respuesta en streaming.
+
+    Orden de las puertas, de la mas barata a la mas cara:
+      1. ritmo por visitante (5/min, 30/h), tambien para las respuestas fijas;
+      2. respuestas deterministas y respuestas ya cacheadas (no tocan Ollama);
+      3. una sola pregunta en curso por visitante, aunque abra muchas pestanas;
+      4. una de las AI_MAX_CONCURRENT plazas globales: si estan llenas se avisa
+         al momento en vez de hacer cola, asi la IA nunca deja sin workers al
+         resto de la web.
+    """
+    from django.http import StreamingHttpResponse
+    data = _leer_json(request)
+    if data is None:
+        return _stream_texto("[[rojo]]Peticion no valida.[[/]]")
+    pregunta = (data.get('command') or '').strip()
     if pregunta.lower().startswith('ask'):
         pregunta = pregunta[3:].strip()
     if not pregunta:
@@ -575,58 +729,35 @@ def terminal_ask(request):
     if len(pregunta) > 300:
         return _stream_texto("[[rojo]]La pregunta es demasiado larga[[/]] (maximo 300 caracteres).")
 
-    import unicodedata as _ud
-    _pl = ''.join(ch for ch in _ud.normalize('NFD', pregunta.lower()) if _ud.category(ch) != 'Mn')
-    if (any(k in _pl for k in ['ultim', 'reciente', 'last', 'latest', 'nuevo']) and
-            any(k in _pl for k in ['articulo', 'post', 'entrada', 'publicad', 'subi'])):
-        _u = Article.objects.filter(is_published=True).order_by('-created_at').first()
-        if _u:
-            _t = ("[[verde]]IA[[/]] [[gris]].[[/]] El ultimo articulo publicado es [[azul]]" + _u.title +
-                  "[[/]], del " + _u.created_at.strftime('%d/%m/%Y') + ".\n\n[[gris]]Leer:[[/]] /article/" + _u.slug + "/")
-            return _stream_texto(_t)
+    ip = client_ip(request)
+    aviso = _limite_ask(ip)
+    if aviso:
+        return _stream_texto(aviso)
 
-    if any(k in _pl for k in ['como funcionas', 'como trabajas', 'como estas hecha', 'como estas programad', 'como estas construid', 'como estas basad', 'estas configurad', 'te configuraron', 'fuiste configurad', 'como te configuraron', 'te programaron', 'te han programado', 'te hicieron', 'te crearon', 'te construyeron', 'te desarrollaron', 'te montaron', 'que modelo eres', 'que modelo usas', 'que ia eres', 'con que estas hecha', 'en que estas basad', 'como te programaron', 'como te hicieron', 'como te crearon']):
-        _t = ("[[verde]]IA[[/]] [[gris]].[[/]] Funciono con un modelo de lenguaje [[azul]]Llama 3.2[[/]] ejecutandose en local a traves de [[azul]]Ollama[[/]], sin depender de ninguna API externa. "
-              "Para responder sobre la wiki uso un sistema RAG: busco los fragmentos mas relevantes de los articulos con embeddings ([[azul]]bge-m3[[/]]) y similitud coseno, y se los paso al modelo. "
-              "Todo esta montado sobre [[azul]]Django[[/]], que hace de proxy seguro hacia el servidor de IA, y la respuesta te llega en streaming.")
-        return _stream_texto(_t)
+    determinista = _respuesta_determinista(pregunta)
+    if determinista:
+        return _stream_texto(determinista)
 
-    if any(k in _pl for k in ['coseno', 'embedding', 'como funciona el rag', 'que es el rag', 'como encuentras los articulos', 'como buscas los articulos', 'como recuperas']):
-        _t = ("[[verde]]IA[[/]] [[gris]].[[/]] La [[azul]]similitud coseno[[/]] mide lo parecidos que son dos textos por su significado. Primero convierto tu pregunta y cada fragmento de los articulos en un vector de numeros (un embedding de 1024 dimensiones con bge-m3) que representa su sentido. "
-              "Luego calculo el coseno del angulo entre el vector de tu pregunta y el de cada fragmento: va de 0 (nada que ver) a 1 (practicamente el mismo tema). "
-              "Me quedo con los fragmentos de mayor puntuacion y se los paso al modelo. Lo bueno es que compara el significado, no las palabras exactas: por eso 'copiar archivos a la nube' encuentra el articulo de rclone aunque no digas 'rclone'.")
-        return _stream_texto(_t)
+    clave = _clave_respuesta(pregunta)
+    guardada = _cache_get(clave)
+    if guardada:
+        return _stream_texto(guardada)
 
-    xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
-    ip = (request.META.get('HTTP_CF_CONNECTING_IP')
-          or (xff.split(',')[0].strip() if xff else '')
-          or request.META.get('REMOTE_ADDR', 'anon'))
-    try:
-        usos = cache.get('ask_rl_' + ip, 0)
-        if usos >= 6:
-            return _stream_texto("[[amarillo]]Vas muy rapido.[[/]] Espera un minuto antes de volver a preguntar.")
-        cache.set('ask_rl_' + ip, usos + 1, 60)
-    except Exception:
-        pass
-
-    system, art_rel = _contexto_ask(pregunta, request)
-    if _pregunta_identidad(pregunta):
-        link = "\n\n[[gris]]Para saber mas, escribe[[/]] [[amarillo]]stack[[/]] [[gris]]o[[/]] [[amarillo]]whoami[[/]][[gris]].[[/]]"
-    else:
-        link = ("\n\n[[gris]]Leer:[[/]] /article/" + art_rel.slug + "/") if art_rel else ""
-
-    url = os.getenv('OLLAMA_URL', 'http://192.168.0.183:11434').rstrip('/') + '/api/generate'
-    modelo = os.getenv('OLLAMA_MODEL', 'llama3.2:3b')
-    payload = json.dumps({
-        "model": modelo, "prompt": pregunta, "system": system, "stream": True,
-        "keep_alive": "30m",
-        "options": {"temperature": 0.3, "top_p": 0.9, "repeat_penalty": 1.1, "num_predict": 450}
-    }).encode('utf-8')
+    turno = reservar_turno_ip(ip)
+    if not turno:
+        return _stream_texto(MSG_EN_CURSO)
+    plaza = reservar_plaza_ia()
+    if not plaza:
+        turno.liberar()
+        return _stream_texto(MSG_OCUPADA)
 
     def generar():
-        primero = True
+        enviado = []
+        completa = False
         try:
-            req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
+            system, art_rel = _contexto_ask(pregunta, request)
+            req = urllib.request.Request(_url_ollama(), data=_payload_ollama(pregunta, system, True),
+                                         headers={'Content-Type': 'application/json'})
             with urllib.request.urlopen(req, timeout=60) as resp:
                 for linea in resp:
                     linea = linea.strip()
@@ -638,19 +769,28 @@ def terminal_ask(request):
                         continue
                     tok = obj.get('response', '')
                     if tok:
-                        if primero:
-                            yield "[[verde]]IA[[/]] [[gris]].[[/]] " + tok
-                            primero = False
-                        else:
-                            yield tok
+                        if not enviado:
+                            tok = "[[verde]]IA[[/]] [[gris]].[[/]] " + tok
+                        enviado.append(tok)
+                        yield tok
                     if obj.get('done'):
+                        completa = True
                         break
+            enlace = _enlace(pregunta, art_rel)
+            if enlace:
+                enviado.append(enlace)
+                yield enlace
         except Exception:
-            yield "\n[[rojo]]La IA no esta disponible ahora mismo.[[/]]"
-        if link:
-            yield link
+            yield "\n" + MSG_NO_DISPONIBLE
+            completa = False
+        finally:
+            plaza.liberar()
+            turno.liberar()
+        if completa and enviado:
+            _cache_set(clave, ''.join(enviado), ASK_CACHE_SEG)
 
-    resp = StreamingHttpResponse(generar(), content_type='text/plain; charset=utf-8')
+    resp = StreamingHttpResponse(RespuestaLiberable(generar(), plaza, turno),
+                                 content_type='text/plain; charset=utf-8')
     resp['X-Accel-Buffering'] = 'no'
     resp['Cache-Control'] = 'no-cache'
     return resp

@@ -31,6 +31,10 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 DEBUG = False
 
 ALLOWED_HOSTS = ['192.168.0.63', 'localhost', '127.0.0.1', 'wiki.pablogg.dev']
+
+# Ruta del admin real. Va en el .env para que no quede en el repositorio público:
+# si está aquí, cualquiera que lea GitHub se salta el honeypot de /admin/.
+ADMIN_URL = os.getenv('ADMIN_URL', 'termistawk').strip('/') + '/'
 CSRF_TRUSTED_ORIGINS = ['https://wiki.pablogg.dev']
 
 # Application definition
@@ -182,6 +186,30 @@ SECURE_HSTS_PRELOAD = True
 SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
+# Caché compartida entre todos los workers (Redis, base 1; Celery usa la 0).
+# Los límites de ritmo y las plazas de la IA dependen de que sea compartida:
+# con la caché por defecto (memoria de cada proceso) cada worker contaba aparte.
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': os.getenv('CACHE_URL', 'redis://127.0.0.1:6379/1'),
+        'KEY_PREFIX': 'wiki',
+        'TIMEOUT': 300,
+    }
+}
+
+# Respuestas de la IA generándose a la vez como máximo (Ollama las atiende de una en una;
+# el resto esperaría en cola reteniendo workers). Si están todas ocupadas se avisa al momento.
+AI_MAX_CONCURRENT = int(os.getenv('AI_MAX_CONCURRENT', '2'))
+
+# El editor Markdown solo admite subidas de usuarios autenticados (además la URL
+# de subida está restringida a staff con 2FA en wiki_pg/urls.py).
+MDEDITOR_CONFIGS = {
+    'default': {
+        'upload_require_auth': True,
+    }
+}
+
 # Django-axes (protección fuerza bruta)
 AUTHENTICATION_BACKENDS = [
     'axes.backends.AxesStandaloneBackend',
@@ -191,3 +219,6 @@ AXES_FAILURE_LIMIT = 5
 AXES_COOLOFF_TIME = 1
 AXES_RESET_ON_SUCCESS = True
 AXES_LOCKOUT_PARAMETERS = ['ip_address']
+# Detrás de nginx, REMOTE_ADDR es siempre 127.0.0.1: sin esto, 5 fallos de
+# cualquiera bloqueaban el login para todo el mundo. Usa la IP real del visitante.
+AXES_CLIENT_IP_CALLABLE = 'wiki.security.client_ip'
