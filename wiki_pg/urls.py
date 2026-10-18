@@ -1,44 +1,24 @@
-"""
-URL configuration for wiki_pg project.
-
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/6.0/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
-"""
-from django.contrib import admin
-from django.urls import path, include
-from django.contrib.sitemaps.views import sitemap
-from django.views.generic import TemplateView
 from django.conf import settings
 from django.conf.urls.static import static
-from wiki.sitemaps import ArticleSitemap, CategorySitemap, StaticSitemap
-from two_factor.urls import urlpatterns as tf_urls
+from django.contrib import admin
+from django.contrib.sitemaps.views import sitemap
+from django.urls import include, path
+from django.views.generic import TemplateView
 from mdeditor.views import UploadView
-from wiki.security import staff_verificado
+from two_factor.urls import urlpatterns as tf_urls
 
-sitemaps = {
-    'articles': ArticleSitemap,
-    'categories': CategorySitemap,
-    'static': StaticSitemap,
-}
+from wiki.security import staff_verificado
+from wiki.sitemaps import SITEMAPS
 
 urlpatterns = [
     path('', include(tf_urls)),
     path(settings.ADMIN_URL, admin.site.urls),
+    # Honeypot: el /admin/ "de siempre" es falso y registra quién lo intenta.
     path('admin/', include('wiki.urls_honeypot')),
     # La subida de imágenes del editor era anónima y sin CSRF (django-mdeditor):
     # ahora solo para staff con 2FA. Mismo nombre de URL que usa el editor.
     path('mdeditor/uploads/', staff_verificado(UploadView.as_view()), name='uploads'),
-    path('sitemap.xml', sitemap, {'sitemaps': sitemaps}, name='django.contrib.sitemaps.views.sitemap'),
+    path('sitemap.xml', sitemap, {'sitemaps': SITEMAPS}, name='django.contrib.sitemaps.views.sitemap'),
     path('robots.txt', TemplateView.as_view(template_name='robots.txt', content_type='text/plain')),
     path('', include('wiki.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

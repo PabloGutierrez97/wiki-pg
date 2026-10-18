@@ -7,7 +7,8 @@ from django.core.cache import cache
 from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
 
-from . import terminal
+from .ai import filtros, prompts, rag, servicio
+from .terminal import comandos
 from .models import Article, Category, HoneypotAttempt, Profile
 from .security import client_ip, reservar_plaza_ia, reservar_turno_ip
 from .templatetags.wiki_tags import get_categories
@@ -112,7 +113,7 @@ class SeguridadTests(TestCase):
         return mock.patch('urllib.request.urlopen', return_value=Respuesta())
 
     def _sin_rag(self):
-        return mock.patch.object(terminal, '_contexto_ask', return_value=('sys', None))
+        return mock.patch.object(prompts, 'contexto_general', return_value=('sys', None))
 
     def _verificar_2fa(self):
         from django_otp import DEVICE_ID_SESSION_KEY
@@ -224,7 +225,7 @@ class SeguridadTests(TestCase):
     def test_ask_con_plazas_llenas_avisa_sin_llamar_a_ollama(self):
         ocupadas = [reservar_plaza_ia(), reservar_plaza_ia()]
         self.assertTrue(all(ocupadas))
-        with mock.patch.object(terminal, '_contexto_ask') as ctx, \
+        with mock.patch.object(prompts, 'contexto_general') as ctx, \
                 mock.patch('urllib.request.urlopen') as ollama:
             texto = self._ask('que es rclone')
         self.assertIn('atendiendo a otras personas', texto)
@@ -262,7 +263,7 @@ class SeguridadTests(TestCase):
         with self._sin_rag(), mock.patch('urllib.request.urlopen', side_effect=OSError('caido')):
             self.assertIn('no esta disponible', self._ask('que es rclone'))
         self.assertTrue(self._plazas_libres())
-        self.assertIsNone(cache.get(terminal._clave_respuesta('que es rclone')))
+        self.assertIsNone(cache.get(servicio.clave_respuesta('que es rclone')))
 
     def test_ask_por_cmd_tiene_las_mismas_puertas(self):
         ocupadas = [reservar_plaza_ia(), reservar_plaza_ia()]
@@ -299,7 +300,7 @@ class IAFueraDeTemaTests(TestCase):
         ]
         for pregunta in preguntas:
             cache.clear()
-            with mock.patch.object(terminal, '_contexto_ask') as ctx, \
+            with mock.patch.object(prompts, 'contexto_general') as ctx, \
                     mock.patch('urllib.request.urlopen') as ollama:
                 texto = self._ask(pregunta)
             self.assertIn('Solo puedo ayudarte', texto, pregunta)
@@ -310,7 +311,7 @@ class IAFueraDeTemaTests(TestCase):
         for pregunta in ['que es rclone', 'dame un articulo de rclone', 'quien es pablo',
                          'cuentame una historia del sr termista', 'receta para desplegar con docker',
                          'imagina que se cae el servidor, que hago', 'tienes algo de transformacion digital']:
-            self.assertFalse(terminal._fuera_de_tema(pregunta), pregunta)
+            self.assertFalse(filtros.esta_fuera_de_tema(pregunta), pregunta)
 
     def test_por_cmd_tambien_se_filtra(self):
         with mock.patch('urllib.request.urlopen') as ollama:
@@ -320,8 +321,8 @@ class IAFueraDeTemaTests(TestCase):
         ollama.assert_not_called()
 
     def test_el_prompt_prohibe_inventar_y_citar_a_pablo(self):
-        with mock.patch.object(terminal, '_buscar_semantico', return_value=[]):
-            system, _ = terminal._contexto_ask('que es rclone', None)
+        with mock.patch.object(rag, 'buscar', return_value=[]):
+            system, _ = prompts.contexto_general('que es rclone')
         self.assertIn('PROHIBIDO INVENTAR', system)
         self.assertIn('NUNCA pongas palabras en boca de Pablo', system)
 
@@ -349,7 +350,7 @@ class IAIdentidadTests(TestCase):
             def read(self):
                 return cuerpo
         with mock.patch('urllib.request.urlopen', return_value=Respuesta()) as ollama, \
-                mock.patch.object(terminal, '_contexto_ask') as ctx:
+                mock.patch.object(prompts, 'contexto_general') as ctx:
             resp = self.client.post('/terminal/ask/', data=json.dumps({'command': 'ask ' + pregunta}),
                                     content_type='application/json', HTTP_X_REAL_IP=self.IP)
             texto = b''.join(resp.streaming_content).decode()
@@ -383,3 +384,31 @@ class IAIdentidadTests(TestCase):
             r = self.client.post('/terminal/cmd/', data=json.dumps({'command': 'ask quien es pablo'}),
                                  content_type='application/json', HTTP_X_REAL_IP=self.IP)
         self.assertIn('Pablo Gutierrez Gracia', r.json()['output'])
+
+
+@override_settings(CACHES=CACHE_TESTS)
+class TerminalComandosTests(TestCase):
+    """El registro de comandos: la ayuda se genera sola y los alias funcionan."""
+
+    def _cmd(self, texto):
+        return self.client.post('/terminal/cmd/', data=json.dumps({'command': texto}),
+                                content_type='application/json').json()
+
+    def test_la_ayuda_lista_todos_los_comandos_visibles(self):
+        ayuda = self._cmd('help')['output']
+        for cmd in set(comandos.REGISTRO.values()):
+            if cmd.ayuda:
+                self.assertIn('[[amarillo]]%s[[/]]' % cmd.nombre, ayuda)
+        self.assertNotIn('sudo', ayuda)                 # los ocultos no salen
+
+    def test_alias_y_comando_desconocido(self):
+        self.assertEqual(self._cmd('about'), self._cmd('whoami'))
+        self.assertEqual(self._cmd('quit'), self._cmd('exit'))
+        self.assertIn('comando no encontrado', self._cmd('rm -rf /')['output'])
+        self.assertEqual(self._cmd('clear'), {'output': '', 'clear': True})
+
+    def test_trocear_respeta_el_tamano(self):
+        texto = 'parrafo corto\n\n' + 'x' * 2000 + '\n\notro parrafo'
+        trozos = rag.trocear(texto, maximo=900)
+        self.assertTrue(all(len(t) <= 900 for t in trozos))
+        self.assertEqual(''.join(trozos).replace('\n', ''), texto.replace('\n', ''))

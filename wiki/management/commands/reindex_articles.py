@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 from wiki.models import Article
-from wiki.terminal import reindexar_articulo
+from wiki.ai.rag import reindexar_articulo
 
 
 class Command(BaseCommand):
@@ -11,7 +11,7 @@ class Command(BaseCommand):
                             help='Recalcula todos aunque no hayan cambiado.')
 
     def handle(self, *args, **opts):
-        arts = Article.objects.filter(is_published=True)
+        arts = Article.objects.publicados()
         total = arts.count()
         indexados = saltados = fallos = 0
         total_frag = 0

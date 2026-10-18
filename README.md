@@ -14,6 +14,7 @@ Wiki técnica personal donde documento soluciones, configuraciones y apuntes de 
 - **Organización por categorías y subcategorías**, con etiquetas y buscador instantáneo que sugiere resultados mientras escribes.
 - **Tiempo de lectura estimado** y barra de progreso en cada artículo.
 - **SEO**: sitemap.xml, robots.txt y metaetiquetas Open Graph con imagen destacada para compartir en redes.
+- **Terminal interactivo** con comandos (`ls`, `cat`, `tree`, `buscar`…) y una **IA local** (`ask`) que responde sobre la wiki con RAG, sin APIs externas.
 
 ## 🔒 Seguridad
 
@@ -38,7 +39,7 @@ Wiki técnica personal donde documento soluciones, configuraciones y apuntes de 
 
 ## 📐 Arquitectura
 
-\`\`\`
+```
 Navegador
    │
    ▼
@@ -46,12 +47,40 @@ Cloudflare Tunnel  (sin puertos abiertos)
    │
    ▼
 Nginx  ──►  Gunicorn  ──►  Django  ──►  PostgreSQL
-                                │
-                                ▼
-                         Celery + Redis
-                     (publicaciones programadas
-                       y automatización LinkedIn)
-\`\`\`
+                             │   └────►  Redis (caché, límites de ritmo, plazas de la IA)
+                             │
+                             ├──►  Celery + Redis   (publicaciones programadas, LinkedIn, indexado)
+                             └──►  Ollama (otro LXC) (llama3.2:3b + embeddings bge-m3)
+```
+
+## 🗂️ Estructura del código
+
+```
+wiki_pg/                 Proyecto Django (settings, urls, celery)
+wiki/
+├── models.py            Category, Article (+ publicados()), Profile, LinkedInToken, HoneypotAttempt, ArticleChunk
+├── views/               Vistas por área: paginas, busqueda, linkedin, honeypot
+├── terminal/
+│   ├── comandos.py      Registro de comandos del terminal (@comando)
+│   └── views.py         Endpoints /terminal/cmd/ y /terminal/ask/ (streaming)
+├── ai/
+│   ├── servicio.py      Flujo de una pregunta: límites, caché, plazas y respuesta
+│   ├── filtros.py       Lo que se decide sin modelo (fuera de tema, respuestas fijas, identidad)
+│   ├── prompts.py       Prompts de sistema
+│   ├── rag.py           Troceado, embeddings y búsqueda semántica
+│   ├── ollama.py        Cliente HTTP de Ollama
+│   └── mensajes.py      Textos fijos que ve el visitante
+├── security.py          IP real, límites de ritmo, plazas de la IA, acceso staff + 2FA
+├── rendering.py         Markdown → HTML cacheado
+├── linkedin.py          API de LinkedIn y borradores con Gemini
+├── tasks.py             Tareas de Celery
+├── signals.py           Reindexado automático al guardar un artículo
+└── tests.py             Tests (seguridad, IA, terminal, páginas)
+```
+
+**Añadir un comando al terminal:** una función en `wiki/terminal/comandos.py` con el decorador `@comando('nombre', ayuda='...')`. Aparece sola en `help`.
+
+**Configuración** (en `.env`): `SECRET_KEY`, `DB_PASSWORD`, `ADMIN_URL`, `LINKEDIN_*`, `GEMINI_API_KEY` y, opcionalmente, `SITE_URL`, `DB_NAME/USER/HOST/PORT`, `OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_EMBED_MODEL`, `AI_MAX_CONCURRENT`, `CACHE_URL`.
 
 ## 📝 Notas
 

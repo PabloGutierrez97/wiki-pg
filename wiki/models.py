@@ -1,13 +1,20 @@
-from django.db import models
+import json
+
+from django.conf import settings
 from django.contrib.auth.models import User
+from django.db import models
+from django.urls import reverse
 from django.utils.text import slugify
 from mdeditor.fields import MDTextField
+
+PALABRAS_POR_MINUTO = 200
+
 
 class Category(models.Model):
     name        = models.CharField(max_length=100)
     slug        = models.SlugField(unique=True)
     description = models.TextField(blank=True)
-    icon	= models.CharField(max_length=100, blank=True, default='fa-solid fa-folder', help_text='Clase de Font Awesome o Simple Icons. Ej: fa-brands fa-linux')
+    icon        = models.CharField(max_length=100, blank=True, default='fa-solid fa-folder', help_text='Clase de Font Awesome o Simple Icons. Ej: fa-brands fa-linux')
     parent      = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE, related_name='subcategories')
     created_at  = models.DateTimeField(auto_now_add=True)
 
@@ -24,6 +31,11 @@ class Category(models.Model):
         if self.parent:
             return f'{self.parent.name} - {self.name}'
         return self.name
+
+class ArticleQuerySet(models.QuerySet):
+    def publicados(self):
+        return self.filter(is_published=True)
+
 
 class Article(models.Model):
     title        = models.CharField(max_length=200)
@@ -44,9 +56,10 @@ class Article(models.Model):
     linkedin_published = models.BooleanField(default=False)
     linkedin_task_id = models.CharField(max_length=100, blank=True, null=True)
 
-    # --- RAG: busqueda semantica ---
-    embedding = models.TextField(blank=True, default='')
+    # Huella del texto indexado para la IA: si no cambia, no se recalculan los embeddings.
     embedding_hash = models.CharField(max_length=64, blank=True, default='')
+
+    objects = ArticleQuerySet.as_manager()
 
     class Meta:
         ordering = ['-created_at']
@@ -59,25 +72,21 @@ class Article(models.Model):
     def __str__(self):
         return self.title
 
-class SiteConfig(models.Model):
-    favicon = models.ImageField(upload_to='favicon/', blank=True, null=True)
+    def get_absolute_url(self):
+        return reverse('wiki:article_detail', args=[self.slug])
 
-    class Meta:
-        verbose_name = 'Configuracion del sitio'
-        verbose_name_plural = 'Configuracion del sitio'
+    @property
+    def url_publica(self):
+        return settings.SITE_URL + self.get_absolute_url()
 
-    def __str__(self):
-        return 'Configuracion del sitio'
+    @property
+    def tag_list(self):
+        return [t.strip() for t in (self.tags or '').split(',') if t.strip()]
 
-    def save(self, *args, **kwargs):
-        # Solo permitir una instancia
-        self.pk = 1
-        super().save(*args, **kwargs)
+    @property
+    def minutos_lectura(self):
+        return max(1, round(len(self.content.split()) / PALABRAS_POR_MINUTO))
 
-    @classmethod
-    def get(cls):
-        obj, _ = cls.objects.get_or_create(pk=1)
-        return obj
 
 class Profile(models.Model):
     nombre = models.CharField(max_length=100, default='Pablo Gutiérrez Gracia')
@@ -108,6 +117,22 @@ class Profile(models.Model):
         obj, _ = cls.objects.get_or_create(pk=1)
         return obj
 
+    def stack_dict(self):
+        """El stack como diccionario {area: tecnologias}; vacío si el JSON no es válido."""
+        try:
+            data = json.loads(self.stack or '{}')
+        except ValueError:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def stack_texto(self):
+        """El stack en una línea ("area: tecnologias; ..."), o el texto tal cual si no es JSON."""
+        data = self.stack_dict()
+        if data:
+            return '; '.join('%s: %s' % (k, v) for k, v in data.items())
+        return (self.stack or '').strip()
+
+
 class LinkedInToken(models.Model):
     access_token = models.TextField()
     author_id = models.CharField(max_length=100)
@@ -126,8 +151,7 @@ class LinkedInToken(models.Model):
 
     @classmethod
     def get(cls):
-        obj = cls.objects.filter(pk=1).first()
-        return obj
+        return cls.objects.filter(pk=1).first()
 
 
 class HoneypotAttempt(models.Model):
@@ -158,20 +182,3 @@ class ArticleChunk(models.Model):
     def __str__(self):
         return 'chunk %s#%d' % (self.article_id, self.idx)
 
-
-# --- RAG: reindexar automaticamente al guardar un articulo publicado ---
-from django.db.models.signals import post_save as _post_save
-from django.dispatch import receiver as _receiver
-
-
-@_receiver(_post_save, sender=Article)
-def _reindex_articulo(sender, instance, created=False, update_fields=None, **kwargs):
-    if update_fields and set(update_fields) <= {'embedding', 'embedding_hash'}:
-        return
-    if not instance.is_published:
-        return
-    try:
-        from .tasks import reindex_article_task
-        reindex_article_task.delay(instance.pk)
-    except Exception:
-        pass
