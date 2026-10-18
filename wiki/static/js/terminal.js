@@ -23,12 +23,7 @@
     'gris': '#888', 'rojo': '#ff5f57'
   };
 
-  // Escapa también las comillas: el texto acaba dentro de atributos (href de los enlaces)
-  // y una URL con " podría añadir atributos como onmouseover.
-  function esc(t) {
-    return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-            .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-  }
+  function esc(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
   function colorear(texto) {
     var t = esc(texto);
