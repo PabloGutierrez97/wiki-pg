@@ -17,7 +17,13 @@ ALLOWED_HOSTS = ['192.168.0.63', 'localhost', '127.0.0.1', 'wiki.pablogg.dev']
 
 # Ruta del admin real. Va en el .env para que no quede en el repositorio público:
 # si está aquí, cualquiera que lea GitHub se salta el honeypot de /admin/.
-ADMIN_URL = os.getenv('ADMIN_URL', 'termistawk').strip('/') + '/'
+# Sin valor por defecto: la ruta antigua está en el historial público de GitHub, y
+# si el .env la perdiera el admin volvería a ella sin avisar. Mejor no arrancar.
+ADMIN_URL = os.getenv('ADMIN_URL', '').strip('/')
+if not ADMIN_URL:
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured('Falta ADMIN_URL en el .env')
+ADMIN_URL += '/'
 
 # URL pública de la wiki y del código (enlaces de LinkedIn, terminal, IA...).
 SITE_URL = os.getenv('SITE_URL', 'https://wiki.pablogg.dev').rstrip('/')
