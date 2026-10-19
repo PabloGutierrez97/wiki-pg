@@ -13,6 +13,7 @@ Puertas, de la más barata a la más cara:
 que va generando la respuesta y libera las plazas al terminar o al cerrarse.
 """
 import hashlib
+import logging
 import re
 import time
 
@@ -27,7 +28,10 @@ MAX_PREGUNTA = 300
 # Respuestas idénticas se sirven desde caché durante este tiempo.
 CACHE_RESPUESTA = 15 * 60
 # Cambiar la versión invalida todas las respuestas guardadas (p. ej. al cambiar el prompt).
-VERSION_CACHE = 'v3'
+VERSION_CACHE = 'v4'
+
+# Registro de preguntas (sin IP) para poder revisar qué contesta la IA: journalctl -u wiki_pg | grep ' ia '
+log = logging.getLogger('wiki.ia')
 
 
 def clave_respuesta(pregunta):
@@ -58,6 +62,7 @@ def preguntar(pregunta, ip):
     if fija:
         return fija
     if filtros.esta_fuera_de_tema(pregunta):
+        log.info('ia fuera_de_tema %r', pregunta[:200])
         return mensajes.FUERA_DE_TEMA
     clave = clave_respuesta(pregunta)
     guardada = cache_get(clave)
@@ -97,6 +102,12 @@ def _generar(pregunta, clave, plaza, turno):
             return
 
         system, enlazado = prompts.contexto_general(pregunta)
+        if not filtros.es_de_la_wiki(pregunta, enlazado):
+            log.info('ia fuera_de_tema %r', pregunta[:200])
+            cache_set(clave, mensajes.FUERA_DE_TEMA, CACHE_RESPUESTA)
+            yield mensajes.FUERA_DE_TEMA
+            return
+        log.info('ia modelo %r', pregunta[:200])
         tokens = ollama.generar_stream(pregunta, system)
         while True:
             try:

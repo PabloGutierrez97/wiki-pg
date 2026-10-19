@@ -454,3 +454,36 @@ class AuditoriaRun1Tests(TestCase):
         publish_article_task.run(art.id)                         # programado: publica
         art.refresh_from_db()
         self.assertTrue(art.is_published)
+
+
+@override_settings(CACHES=CACHE_TESTS)
+class IATemaPermitidoTests(TestCase):
+    """Solo pasan al modelo preguntas relacionadas con la wiki (caso real: tanques soviéticos)."""
+
+    def setUp(self):
+        cache.clear()
+
+    def _ask(self, pregunta, enlazado=None):
+        with mock.patch.object(prompts, 'contexto_general', return_value=('sys', enlazado)), \
+                mock.patch('urllib.request.urlopen') as ollama:
+            r = self.client.post('/terminal/ask/', data=json.dumps({'command': 'ask ' + pregunta}),
+                                 content_type='application/json', HTTP_X_REAL_IP='203.0.113.50')
+            texto = b''.join(r.streaming_content).decode()
+            r.close()
+        return texto, ollama
+
+    def test_tema_ajeno_no_llega_al_modelo(self):
+        for pregunta in ['hablame de los tanques sovieticos', 'quien gano la segunda guerra mundial',
+                         'que tal el real madrid']:
+            cache.clear()
+            texto, ollama = self._ask(pregunta)
+            self.assertIn('Solo puedo ayudarte', texto, pregunta)
+            ollama.assert_not_called()
+
+    def test_preguntas_de_la_wiki_si_pasan(self):
+        for pregunta in ['que es rclone', 'mi ordenador va lento', 'que articulos hay de redes', 'hola']:
+            self.assertTrue(filtros.es_de_la_wiki(pregunta), pregunta)
+
+    def test_parecido_a_un_articulo_tambien_pasa(self):
+        self.assertFalse(filtros.es_de_la_wiki('que es el protocolo zeta'))
+        self.assertTrue(filtros.es_de_la_wiki('que es el protocolo zeta', articulo_relacionado=object()))

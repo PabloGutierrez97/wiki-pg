@@ -201,3 +201,12 @@ AXES_LOCKOUT_PARAMETERS = ['ip_address']
 # Detrás de nginx, REMOTE_ADDR es siempre 127.0.0.1: sin esto, 5 fallos de
 # cualquiera bloqueaban el login para todo el mundo. Usa la IP real del visitante.
 AXES_CLIENT_IP_CALLABLE = 'wiki.security.client_ip_cuota'
+
+# Registro: lo de la IA (preguntas, sin IP) va a la salida de gunicorn y queda en journald.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {'simple': {'format': '%(levelname)s %(name)s %(message)s'}},
+    'handlers': {'consola': {'class': 'logging.StreamHandler', 'formatter': 'simple'}},
+    'loggers': {'wiki.ia': {'handlers': ['consola'], 'level': 'INFO', 'propagate': False}},
+}

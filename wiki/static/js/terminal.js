@@ -111,48 +111,100 @@
     .catch(function(){ printLine('[[rojo]]Error de conexion.[[/]]', false); body.scrollTop = body.scrollHeight; });
   }
 
+  // ---- Pregunta a la IA -------------------------------------------------
+  // Mientras la IA trabaja, el terminal se comporta como uno real: el prompt
+  // desaparece (el proceso "tiene" la terminal), una línea de estado muestra
+  // un spinner y los segundos, y Ctrl+C cancela. Al terminar vuelve el prompt.
+  var SPIN = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+  var sinMovimiento = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  var conTeclado = !!(window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches);
+  var promptLine = document.getElementById('term-prompt-line');
+  var peticion = null;
+
   function runAsk(cmd) {
     ocupado = true;
     input.disabled = true;
-    input.placeholder = 'La IA esta respondiendo...';
+    promptLine.style.display = 'none';
     var div = document.createElement('div');
+    div.className = 't-ask';
+    var estado = document.createElement('div');
+    estado.className = 't-estado';
+    estado.setAttribute('role', 'status');
+    div.appendChild(estado);
     output.appendChild(div);
-    var pensando = true, n = 0;
-    var timer = setInterval(function(){
-      if (!pensando) return;
-      n = (n + 1) % 4;
-      div.innerHTML = '<span style="color:#888;">La IA esta pensando' + new Array(n + 1).join('.') + '</span>';
-    }, 400);
-    body.scrollTop = body.scrollHeight;
-    var buffer = '';
-    function pintar(){ div.innerHTML = renderMD(buffer); body.scrollTop = body.scrollHeight; }
-    function parar(){ pensando = false; if (timer) { clearInterval(timer); timer = null; } }
-    function liberar(){ ocupado = false; input.disabled = false; input.placeholder = ''; try { input.focus(); } catch (e) {} }
+
+    var t0 = Date.now(), frame = 0, timer = null, buffer = '';
+    function pintarEstado() {
+      var seg = Math.floor((Date.now() - t0) / 1000);
+      estado.innerHTML = '<span class="t-spin" aria-hidden="true">' + (sinMovimiento ? '…' : SPIN[frame++ % SPIN.length]) + '</span>' +
+        'pensando<span class="t-tiempo">' + seg + 's</span>' +
+        (conTeclado && seg >= 3 ? '<span class="t-pista">ctrl+c cancela</span>' : '');
+      body.scrollTop = body.scrollHeight;
+    }
+    pintarEstado();
+    timer = setInterval(pintarEstado, sinMovimiento ? 1000 : 90);
+
+    function parar() { if (timer) { clearInterval(timer); timer = null; } }
+    function pintar(escribiendo) {
+      div.innerHTML = renderMD(buffer) + (escribiendo ? '<span class="t-cursor" aria-hidden="true"></span>' : '');
+      body.scrollTop = body.scrollHeight;
+    }
+    function liberar() {
+      peticion = null;
+      ocupado = false;
+      input.disabled = false;
+      promptLine.style.display = 'flex';
+      body.scrollTop = body.scrollHeight;
+      try { input.focus(); } catch (e) {}
+    }
+
+    peticion = window.AbortController ? new AbortController() : null;
     fetch('/terminal/ask/', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({command: cmd})
+      body: JSON.stringify({command: cmd}),
+      signal: peticion ? peticion.signal : undefined
     })
     .then(function(resp){
       if (!resp.ok) { throw new Error('http'); }
       if (!resp.body || !resp.body.getReader) {
-        return resp.text().then(function(t){ parar(); buffer = t; pintar(); });
+        return resp.text().then(function(t){ parar(); buffer = t; pintar(false); });
       }
       var reader = resp.body.getReader();
       var dec = new TextDecoder();
       function leer(){
         return reader.read().then(function(r){
-          if (r.done) { return; }
+          if (r.done) { parar(); pintar(false); return; }
           var txt = dec.decode(r.value, {stream: true});
-          if (txt) { parar(); buffer += txt; pintar(); }
+          if (txt) { parar(); buffer += txt; pintar(true); }
           return leer();
         });
       }
       return leer();
     })
-    .then(function(){ liberar(); })
-    .catch(function(){ parar(); if (!buffer) { div.innerHTML = colorear('[[rojo]]Error de conexion.[[/]]'); } liberar(); });
+    .then(liberar)
+    .catch(function(err){
+      parar();
+      if (err && err.name === 'AbortError') {
+        div.innerHTML = (buffer ? renderMD(buffer) + '\n' : '') + colorear('[[gris]]^C cancelado[[/]]');
+      } else if (!buffer) {
+        div.innerHTML = colorear('[[rojo]]Error de conexion.[[/]] Vuelve a intentarlo en un momento.');
+      } else {
+        pintar(false);
+      }
+      liberar();
+    });
   }
+
+  // Ctrl+C cancela la pregunta en curso (si no hay texto seleccionado que copiar).
+  document.addEventListener('keydown', function(e){
+    if (!peticion || !e.ctrlKey || (e.key !== 'c' && e.key !== 'C')) return;
+    if (win.style.display !== 'flex') return;
+    var sel = window.getSelection ? String(window.getSelection()) : '';
+    if (sel) return;
+    e.preventDefault();
+    peticion.abort();
+  });
 
   function applySize() {
     if (minimized) {

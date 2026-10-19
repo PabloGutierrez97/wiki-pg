@@ -69,7 +69,24 @@ _RE_TECNICA = re.compile(r'\b(' + '|'.join(re.escape(k) for k in (
     'rclone', 'script', 'bash', 'python', 'powershell', 'ansible', 'terraform', 'git', 'django', 'postgres',
     'mysql', 'base de datos', 'redis', 'celery', 'cloudflare', 'despleg', 'deploy', 'devops', 'monitoriz',
     'grafana', 'zabbix', 'active directory', 'cron', 'systemd', 'raid', 'zfs', 'ollama', 'kernel', 'cluster',
+    # informática general y puesto de trabajo
+    'pc', 'ordenador', 'portatil', 'equipo', 'router', 'switch', 'wifi', 'internet', 'ethernet', 'puerto',
+    'correo', 'email', 'exchange', 'outlook', 'office', 'm365', 'microsoft 365', 'onedrive', 'sharepoint', 'teams',
+    'intune', 'entra', 'azure', 'aws', 'nube', 'cloud', 'impresora', 'usuario', 'contrasena', 'password',
+    'permiso', 'dominio', 'gpo', 'politica de grupo', 'cpu', 'ram', 'memoria', 'disco', 'almacenamiento',
+    'nas', 'copia de seguridad', 'restaurar', 'seguridad', 'ciberseguridad', 'malware', 'antivirus',
+    'hardware', 'software', 'programa', 'aplicacion', 'codigo', 'sql', 'api', 'http', 'https', 'web',
+    'html', 'javascript', 'json', 'yaml', 'shell', 'consola', 'comando', 'terminal', 'sistema operativo',
+    'mikrotik', 'fortinet', 'pfsense', 'opnsense', 'vmware', 'hyper-v', 'esxi', 'veeam', 'rsync', 'log',
+    'monitor', 'actualizar', 'actualizacion', 'instalar', 'configurar', 'error', 'fallo', 'tecnologia',
+    'ia', 'inteligencia artificial', 'llm', 'modelo de lenguaje', 'rag', 'embedding',
 )) + ')')
+
+# La pregunta habla de la propia wiki, sus artículos o de Pablo.
+_RE_WIKI = re.compile(r'\b(wiki|articulos?|post|entradas?|categorias?|etiquetas?|pablo|autor|contacto|linkedin|github|stack)\b')
+# Saludos y preguntas sobre qué puede hacer el asistente: se dejan pasar.
+_RE_SALUDO = re.compile(r'^\s*(hola|buenas|buenos dias|buenas tardes|buenas noches|hey|gracias|muchas gracias|adios|que tal)[\s!?.,]*$'
+                        r'|\b(que puedes hacer|que sabes hacer|en que (me )?puedes ayudar|como te uso|ayuda)\b')
 
 _CREATIVOS = (r'historia|historieta|cuento|relato|poema|poesia|cancion|receta|carta|ensayo|chiste|'
               r'novela|guion|rap|verso|redaccion|discurso|biografia')
@@ -91,6 +108,22 @@ _RE_AJENO = re.compile(
     r'\b(recetas?|cocina|cocinar|cocino|guisos?|guisar|ingredientes?|hornear|postres?|gastronom\w*|'
     r'gachas|paella|tortilla|cocido|lentejas|migas|pisto|croquetas?|gazpacho|salmorejo|'
     r'horoscopo|futbol|pelicula|famos[oa]s?)\b')
+
+
+def es_de_la_wiki(pregunta, articulo_relacionado=None):
+    """True si la pregunta tiene relación con la wiki y puede pasar al modelo.
+
+    Lista de permitidos en vez de prohibidos: el modelo de 3B contesta a
+    cualquier cosa que se le cuele (historia, armas, política...), así que
+    solo se le pasa lo que es técnico, trata de la wiki o de Pablo, o se parece
+    a algún artículo publicado (por palabras o por similitud semántica).
+    """
+    q = ' ' + ' '.join(normalizar(pregunta).split()) + ' '
+    if any(k in q for k in _FOLCLORE) or es_pregunta_de_identidad(pregunta):
+        return True
+    if _RE_TECNICA.search(q) or _RE_WIKI.search(q) or _RE_SALUDO.search(q):
+        return True
+    return articulo_relacionado is not None
 
 
 def esta_fuera_de_tema(pregunta):

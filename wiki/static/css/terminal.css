@@ -27,3 +27,17 @@
 :root[data-theme="light"] #term-output .tpre { background:#eef1f5 !important; border-color:rgba(0,0,0,0.1) !important; }
 :root[data-theme="light"] #term-output .tcode { background:#e6e9ee !important; }
 :root[data-theme="light"] #term-output strong { color:#111827 !important; }
+
+/* ===== Estado de la IA (pensando / escribiendo) ===== */
+#term-output .t-estado { color:#888; }
+#term-output .t-spin { display:inline-block; width:1.4em; color:#28c840; }
+#term-output .t-tiempo { color:#666; margin-left:.5em; font-variant-numeric:tabular-nums; }
+#term-output .t-pista { color:#555; margin-left:1.4em; }
+#term-output .t-cursor { display:inline-block; width:.55em; height:1.05em; margin-left:2px; vertical-align:text-bottom; background:#28c840; animation:t-parpadeo 1s steps(1) infinite; }
+@keyframes t-parpadeo { 50% { opacity:0; } }
+@media (prefers-reduced-motion: reduce) { #term-output .t-cursor { animation:none; opacity:.7; } }
+:root[data-theme="light"] #term-output .t-estado { color:#6b7280; }
+:root[data-theme="light"] #term-output .t-spin { color:#16a34a; }
+:root[data-theme="light"] #term-output .t-tiempo { color:#9aa1ab; }
+:root[data-theme="light"] #term-output .t-pista { color:#b0b6bf; }
+:root[data-theme="light"] #term-output .t-cursor { background:#16a34a; }
