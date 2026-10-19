@@ -13,7 +13,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from ..ai import mensajes, servicio
-from ..security import client_ip, excede_limite
+from ..security import client_ip_cuota, excede_limite
 from . import comandos
 
 # Comandos baratos (ls, cat, tree...), pero sin límite se pueden encadenar.
@@ -21,6 +21,8 @@ CMD_POR_MINUTO = 60
 # Una pregunta de 300 caracteres cabe de sobra en 4 KB.
 MAX_BODY = 4096
 MAX_COMANDO = 400
+RECHAZOS = {mensajes.RAPIDO, mensajes.EN_CURSO, mensajes.OCUPADA, mensajes.USO,
+            mensajes.DEMASIADO_LARGA, mensajes.FUERA_DE_TEMA}
 
 
 def _leer_json(request):
@@ -33,7 +35,7 @@ def _leer_json(request):
         return None
     try:
         data = json.loads(request.body or b'{}')
-    except ValueError:
+    except (ValueError, RecursionError):
         return None
     return data if isinstance(data, dict) else None
 
@@ -55,7 +57,7 @@ def terminal_command(request):
     if not raw:
         return JsonResponse({'output': ''})
 
-    ip = client_ip(request)
+    ip = client_ip_cuota(request)
     if excede_limite('cmd:min:' + ip, CMD_POR_MINUTO, 60):
         return JsonResponse({'output': mensajes.RAPIDO}, status=429)
 
@@ -81,11 +83,13 @@ def terminal_command(request):
 def terminal_ask(request):
     data = _leer_json(request)
     if data is None:
-        return _streaming(servicio.trozos_con_pausa("[[rojo]]Peticion no valida.[[/]]"))
+        return _streaming(["[[rojo]]Peticion no valida.[[/]]"])
     pregunta = (data.get('command') or '').strip()
     if pregunta.lower().startswith('ask'):
         pregunta = pregunta[3:]
-    respuesta = servicio.preguntar(pregunta, client_ip(request))
+    respuesta = servicio.preguntar(pregunta, client_ip_cuota(request))
     if isinstance(respuesta, str):
-        respuesta = servicio.trozos_con_pausa(respuesta)
+        # Los avisos (límite, ocupada, fuera de tema...) salen de golpe para no
+        # retener un hilo de gunicorn; las respuestas normales, con efecto de escritura.
+        respuesta = [respuesta] if respuesta in RECHAZOS else servicio.trozos_con_pausa(respuesta)
     return _streaming(respuesta)

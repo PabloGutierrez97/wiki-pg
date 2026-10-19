@@ -22,19 +22,47 @@ def _ip_valida(valor):
         return None
 
 
+# Proxies de los que se acepta X-Real-IP (nginx en la misma máquina).
+PROXIES_DE_CONFIANZA = {'127.0.0.1', '::1'}
+
+
 def client_ip(request):
     """IP real del visitante.
 
     nginx resuelve la IP de Cloudflare (real_ip_header CF-Connecting-IP, solo
     confiando en 127.0.0.1) y la pasa en X-Real-IP, sobrescribiendo cualquier
-    X-Real-IP que envíe el cliente. Es la única cabecera fiable; X-Forwarded-For
-    y CF-Connecting-IP se pueden falsificar si alguien llega sin pasar por nginx.
+    X-Real-IP que envíe el cliente. Solo se acepta esa cabecera si la conexión
+    viene del propio nginx: si alguien llegara a gunicorn por otro camino, no
+    podría elegir su IP para saltarse los límites o el bloqueo de axes.
     """
-    for clave in ('HTTP_X_REAL_IP', 'REMOTE_ADDR'):
-        ip = _ip_valida(request.META.get(clave))
-        if ip:
-            return ip
-    return '0.0.0.0'
+    remota = _ip_valida(request.META.get('REMOTE_ADDR'))
+    if remota in PROXIES_DE_CONFIANZA:
+        cabecera = _ip_valida(request.META.get('HTTP_X_REAL_IP'))
+        if cabecera:
+            return cabecera
+    return remota or '0.0.0.0'
+
+
+def ip_cuota(ip):
+    """Clave para los límites por visitante: IPv4 tal cual; IPv6 agrupada por /64.
+
+    Cualquier VPS recibe un /64 entero (2^64 direcciones). Si cada dirección
+    tuviera su propio cupo, un solo atacante tendría límites infinitos.
+    """
+    try:
+        dir_ip = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip
+    if dir_ip.version == 6:
+        if dir_ip.ipv4_mapped:
+            return str(dir_ip.ipv4_mapped)
+        return str(ipaddress.ip_network(f'{dir_ip}/64', strict=False).network_address)
+    return str(dir_ip)
+
+
+def client_ip_cuota(request):
+    """client_ip ya agrupada para límites (lo usa también django-axes)."""
+    return ip_cuota(client_ip(request))
 
 
 def excede_limite(clave, limite, ventana):

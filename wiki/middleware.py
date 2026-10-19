@@ -12,7 +12,7 @@ class TwoFactorRequiredMiddleware:
     def __call__(self, request):
         user = request.user
         if (user.is_authenticated and user.is_staff
-                and request.path.startswith('/' + settings.ADMIN_URL)
+                and request.path_info.startswith('/' + settings.ADMIN_URL)
                 and not getattr(user, 'is_verified', lambda: False)()):
             return redirect(reverse('two_factor:setup'))
         return self.get_response(request)

@@ -1,10 +1,13 @@
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, render
 
 from ..models import Article, Category, Profile
 from ..rendering import articulo_html, resumen
+from ..security import client_ip_cuota, excede_limite
 from ..templatetags.wiki_tags import get_categories
 
 MAX_TAG = 50
+ETIQUETAS_POR_MINUTO = 30
 
 
 def home(request):
@@ -51,6 +54,9 @@ def article_detail(request, slug):
 
 
 def tag_detail(request, tag):
+    if excede_limite('tag:min:' + client_ip_cuota(request), ETIQUETAS_POR_MINUTO, 60):
+        return HttpResponse('Demasiadas peticiones seguidas. Espera un minuto.',
+                            status=429, content_type='text/plain; charset=utf-8')
     tag = tag[:MAX_TAG]
     return render(request, 'wiki/tag_detail.html', {
         'tag': tag,

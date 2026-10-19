@@ -412,3 +412,45 @@ class TerminalComandosTests(TestCase):
         trozos = rag.trocear(texto, maximo=900)
         self.assertTrue(all(len(t) <= 900 for t in trozos))
         self.assertEqual(''.join(trozos).replace('\n', ''), texto.replace('\n', ''))
+
+
+@override_settings(CACHES=CACHE_TESTS)
+class AuditoriaRun1Tests(TestCase):
+    """Regresiones de la auditoría de seguridad run-1."""
+
+    def setUp(self):
+        cache.clear()
+
+    def test_x_real_ip_solo_si_viene_de_nginx(self):
+        rf = RequestFactory()
+        de_nginx = rf.get('/', HTTP_X_REAL_IP='203.0.113.5', REMOTE_ADDR='127.0.0.1')
+        directo = rf.get('/', HTTP_X_REAL_IP='203.0.113.5', REMOTE_ADDR='198.51.100.1')
+        self.assertEqual(client_ip(de_nginx), '203.0.113.5')
+        self.assertEqual(client_ip(directo), '198.51.100.1')     # la cabecera falsa no cuenta
+
+    def test_ipv6_comparte_cupo_por_64(self):
+        from .security import ip_cuota
+        self.assertEqual(ip_cuota('2001:db8:1:2::1'), ip_cuota('2001:db8:1:2:ffff::9'))
+        self.assertNotEqual(ip_cuota('2001:db8:1:2::1'), ip_cuota('2001:db8:1:3::1'))
+        self.assertEqual(ip_cuota('203.0.113.7'), '203.0.113.7')
+        respuestas = []
+        for n in range(1, 7):
+            r = self.client.post('/terminal/ask/', data=json.dumps({'command': 'ask como funcionas'}),
+                                 content_type='application/json', HTTP_X_REAL_IP='2001:db8:1:2::%x' % n)
+            respuestas.append(b''.join(r.streaming_content).decode())
+        self.assertIn('Vas muy rapido', respuestas[-1])       # el 6.º del mismo /64 se frena
+
+    def test_publicacion_programada_cancelada_no_publica(self):
+        from django.utils import timezone
+        from .tasks import publish_article_task
+        user = User.objects.create(username='autor')
+        cat = Category.objects.create(name='C', slug='c')
+        art = Article.objects.create(title='Borrador', slug='borrador-prog', category=cat, author=user,
+                                     content='x', is_published=False)
+        publish_article_task.run(art.id)                         # sin programación: no publica
+        art.refresh_from_db()
+        self.assertFalse(art.is_published)
+        Article.objects.filter(pk=art.pk).update(publish_scheduled=timezone.now(), publish_task_id='')
+        publish_article_task.run(art.id)                         # programado: publica
+        art.refresh_from_db()
+        self.assertTrue(art.is_published)

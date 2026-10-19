@@ -200,4 +200,4 @@ AXES_RESET_ON_SUCCESS = True
 AXES_LOCKOUT_PARAMETERS = ['ip_address']
 # Detrás de nginx, REMOTE_ADDR es siempre 127.0.0.1: sin esto, 5 fallos de
 # cualquiera bloqueaban el login para todo el mundo. Usa la IP real del visitante.
-AXES_CLIENT_IP_CALLABLE = 'wiki.security.client_ip'
+AXES_CLIENT_IP_CALLABLE = 'wiki.security.client_ip_cuota'

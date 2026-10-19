@@ -37,12 +37,18 @@ def publish_to_linkedin_task(article_id):
         return f'Error: {e}'
 
 
-@shared_task
-def publish_article_task(article_id):
+@shared_task(bind=True)
+def publish_article_task(self, article_id):
     from .models import Article
 
     try:
         article = Article.objects.get(pk=article_id)
+        if article.is_published:
+            return 'Ya estaba publicado'
+        if not article.publish_scheduled:
+            return 'Programación cancelada; no se publica'
+        if article.publish_task_id and article.publish_task_id != self.request.id:
+            return 'Tarea sustituida por otra programación; no se publica'
         article.is_published = True
         article.save()
         return f'Artículo "{article.title}" publicado correctamente'

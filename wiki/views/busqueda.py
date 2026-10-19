@@ -6,7 +6,7 @@ from django.shortcuts import render
 
 from ..models import Article
 from ..rendering import resumen
-from ..security import client_ip, excede_limite
+from ..security import client_ip_cuota, excede_limite
 from ..utils import cacheado
 
 CACHE_BUSQUEDA = 5 * 60
@@ -46,7 +46,7 @@ def search(request):
     query = _consulta(request)
     results = []
     if len(query) >= MIN_Q:
-        if excede_limite('busq:min:' + client_ip(request), BUSQUEDAS_POR_MINUTO, 60):
+        if excede_limite('busq:min:' + client_ip_cuota(request), BUSQUEDAS_POR_MINUTO, 60):
             return HttpResponse('Demasiadas busquedas seguidas. Espera un minuto y vuelve a intentarlo.',
                                 status=429, content_type='text/plain; charset=utf-8')
         results = _articulos(query, MAX_RESULTADOS)
@@ -59,7 +59,7 @@ def search_api(request):
     query = _consulta(request)
     resultados = []
     if len(query) >= MIN_Q:
-        if excede_limite('sugg:min:' + client_ip(request), SUGERENCIAS_POR_MINUTO, 60):
+        if excede_limite('sugg:min:' + client_ip_cuota(request), SUGERENCIAS_POR_MINUTO, 60):
             return JsonResponse({'results': []}, status=429)
         resultados = [{
             'title': a.title,
