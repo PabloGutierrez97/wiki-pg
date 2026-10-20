@@ -581,3 +581,26 @@ class SEOTests(TestCase):
         art = Article.objects.get(pk=self.art.pk)
         self.assertTrue(art.linkedin_published)
         self.assertEqual(art.updated_at, antes)
+
+
+@override_settings(CACHES=CACHE_TESTS)
+class IAInsultosTests(TestCase):
+    """Si se insulta a la IA, contesta con una réplica malsonante fija sin llamar al modelo."""
+
+    def setUp(self):
+        cache.clear()
+
+    def test_insulto_recibe_replica_sin_modelo(self):
+        from .ai import mensajes
+        with mock.patch('urllib.request.urlopen') as ollama:
+            r = self.client.post('/terminal/ask/', data=json.dumps({'command': 'ask eres tonta'}),
+                                 content_type='application/json', HTTP_X_REAL_IP='203.0.113.70')
+            texto = b''.join(r.streaming_content).decode()
+        ollama.assert_not_called()
+        self.assertTrue(any(rep[:30] in texto for rep in mensajes.REPLICAS), texto)
+
+    def test_palabrota_en_duda_tecnica_no_es_insulto(self):
+        for q in ['que mierda es proxmox', 'proxmox es una mierda, como lo configuro', 'que pesado es configurar ceph']:
+            self.assertFalse(filtros.es_insulto(q), q)
+        for q in ['eres tonta', 'puta ia', 'ia de mierda', 'eres tonta, que es proxmox']:
+            self.assertTrue(filtros.es_insulto(q), q)

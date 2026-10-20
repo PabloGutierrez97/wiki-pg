@@ -62,6 +62,9 @@ def preguntar(pregunta, ip):
     if no_permitida:
         log.info('ia %s %r', no_permitida, pregunta[:200])
         return mensajes.ATAQUE if no_permitida == 'ataque' else mensajes.MANIPULACION
+    if filtros.es_insulto(pregunta):
+        log.info('ia insulto %r', pregunta[:200])
+        return mensajes.replica_insulto()
     fija = filtros.respuesta_fija(pregunta)
     if fija:
         return fija

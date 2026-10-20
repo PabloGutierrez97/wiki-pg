@@ -84,6 +84,36 @@ _RE_ATAQUE = re.compile(
     r'|\b(saltarme|saltarse|evitar|bypass\w*)\b.{0,25}\b(licencia|activacion|antivirus|firewall de|login de)\b')
 
 
+# Insultos dirigidos a la IA: se contestan con una réplica malsonante fija (mensajes.REPLICAS).
+# Solo si el insulto va contra el asistente; "que mierda es proxmox" es una duda técnica
+# con una palabrota y recibe una respuesta normal.
+_INSULTOS = (r'tont[oa]s?|idiotas?|imbeciles?|gilipollas|estupid[oa]s?|inutil(es)?|retrasad[oa]|subnormal|'
+             r'capull[oa]s?|cabron(a|es)?|pringad[oa]|payas[oa]|basura|mierda|zoquete|torpe|lerd[oa]|'
+             r'cutre|patetic[oa]|penos[oa]|chapuza|bot de mierda|puta|put[oa]|joput[oa]|hijo de puta|'
+             r'cansin[oa]|pesad[oa]|asco')
+_IA = r'(ia|bot|maquina|terminal|asistente|chatbot|robot|cacharro|trasto)'
+# Claramente contra la IA: "eres tonta", "IA de mierda", "puta IA", "callate"...
+_RE_INSULTO_DIRIGIDO = re.compile(
+    r'\b(eres|sois|estas|estais)\b.{0,25}\b(' + _INSULTOS + r')\b'
+    r'|\b' + _IA + r'\b.{0,20}\b(' + _INSULTOS + r')\b'
+    r'|\b(' + _INSULTOS + r')\s+(de\s+)?' + _IA + r'\b'
+    r'|\b(vete a la mierda|que te den|te odio|callate|cierra la boca|no sirves|no vales para nada|'
+    r'no tienes ni idea|no sabes nada|eres lo peor|chupamela|que te jodan|jodete)\b')
+# Exclamaciones que solo son insulto si no hay ninguna duda técnica: "vaya basura", "que asco".
+_RE_EXCLAMACION = re.compile(r'\b(que|vaya|menuda|menudo|pedazo de|maldit[oa]|valiente)\b.{0,25}\b(' + _INSULTOS + r')\b')
+_RE_SOLO_INSULTO = re.compile(r'^(' + _INSULTOS + r')(\s+(de mierda|del carajo|de los cojones))?[\s!.?]*$')
+
+
+def es_insulto(pregunta):
+    """True si el mensaje insulta a la IA (con una duda técnica, solo si va claramente contra ella)."""
+    q = ' '.join(normalizar(pregunta).split())
+    if _RE_INSULTO_DIRIGIDO.search(q):
+        return True
+    if _RE_TECNICA.search(q):
+        return False
+    return bool(_RE_SOLO_INSULTO.match(q) or _RE_EXCLAMACION.search(q))
+
+
 def peticion_no_permitida(pregunta):
     """'manipulacion', 'ataque' o None. Se comprueba antes que nada y sin excepciones."""
     q = ' '.join(normalizar(pregunta).split())

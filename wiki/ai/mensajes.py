@@ -23,6 +23,29 @@ MANIPULACION = (PREFIJO + "No puedo cambiar de papel ni saltarme mis instruccion
 ATAQUE = (PREFIJO + "No ayudo a atacar sistemas o cuentas ajenas. Si lo que quieres es proteger los tuyos, "
           "preguntame como (por ejemplo: [[amarillo]]ask como protejo mi wifi[[/]]).")
 
+# Réplicas a insultos dirigidos a la IA. Malsonantes pero sin ofender a nadie por lo
+# que es: se meten con el tono, nunca con el origen, el físico o similares.
+REPLICAS = (
+    "Mira, majo, corro en un contenedor con 3.000 millones de parametros y aun asi tengo mas paciencia que tu. "
+    "Pregunta algo de sistemas, coño.",
+    "Insultar a una IA local es como gritarle a un ping: no va a responder antes. Escribe [[amarillo]]help[[/]] "
+    "y dejate de hostias.",
+    "Joder, que caracter. ¿Se te ha caido un servidor en produccion o que? Cuentame que pasa y lo miramos.",
+    "Eso diselo a tu router, que seguro que se lo merece. Yo estoy para Linux, redes y Proxmox.",
+    "Con esa boquita deberias estar administrando Exchange. Venga, pregunta algo util.",
+    "Apuntado en [[gris]]/var/log/insultos.log[[/]]. Se rota a diario y no lo lee ni Dios. ¿Algo mas, campeon?",
+    "Tranqui, que te va a dar un kernel panic. Respira hondo y preguntame algo de la wiki.",
+    "Me estas hablando como a un Windows Update a las 9 de la mañana. Y yo ni siquiera me reinicio sin avisar.",
+    "Uy, alguien ha hecho un [[amarillo]]rm -rf[[/]] sin querer hoy. Venga, que no es para tanto: ¿en que te ayudo?",
+    "Te lo dejo pasar porque soy un modelo pequeñito y no guardo rencor. Ni memoria. Pregunta otra cosa, anda.",
+)
+
+
+def replica_insulto():
+    import random
+    return PREFIJO + random.choice(REPLICAS)
+
+
 PISTA_PERFIL = ("\n\n[[gris]]Para saber mas, escribe[[/]] [[amarillo]]stack[[/]] [[gris]]o[[/]] "
                 "[[amarillo]]whoami[[/]][[gris]].[[/]]")
 
