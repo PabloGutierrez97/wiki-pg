@@ -1,8 +1,13 @@
+import json
+
+from django.conf import settings
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, render
+from django.urls import reverse
+from django.utils.safestring import mark_safe
 
 from ..models import Article, Category, Profile
-from ..rendering import articulo_html, resumen
+from ..rendering import articulo_html, descripcion, resumen
 from ..security import client_ip_cuota, excede_limite
 from ..templatetags.wiki_tags import get_categories
 
@@ -43,14 +48,55 @@ def article_detail(request, slug):
         except ValueError:
             pass
 
+    desc = descripcion(article)
     return render(request, 'wiki/article_detail.html', {
         'article': article,
+        'descripcion': desc,
+        'datos_estructurados': _datos_estructurados(article, desc, featured_image_url),
         'content_html': content_html,
         'toc': toc,
         'reading_time': article.minutos_lectura,
         'tags': article.tag_list,
         'featured_image_url': featured_image_url,
     })
+
+
+def _datos_estructurados(article, desc, imagen):
+    """JSON-LD (schema.org) para que Google entienda el artículo y su ruta.
+
+    Se escapa '<' para que ningún texto pueda cerrar la etiqueta script.
+    """
+    base = settings.SITE_URL
+    cat = article.category
+    migas = [('Inicio', base + '/')]
+    if cat.parent:
+        migas.append((cat.parent.name, base + reverse('wiki:category_detail', args=[cat.parent.slug])))
+    migas.append((cat.name, base + reverse('wiki:category_detail', args=[cat.slug])))
+    migas.append((article.title, article.url_publica))
+    articulo = {
+        '@context': 'https://schema.org',
+        '@type': 'TechArticle',
+        'headline': article.title[:110],
+        'description': desc,
+        'datePublished': article.created_at.isoformat(),
+        'dateModified': article.updated_at.isoformat(),
+        'inLanguage': 'es',
+        'articleSection': cat.name,
+        'keywords': ', '.join(article.tag_list),
+        'mainEntityOfPage': article.url_publica,
+        'author': {'@type': 'Person', 'name': 'Pablo Gutiérrez Gracia',
+                   'url': base + reverse('wiki:about')},
+    }
+    if imagen:
+        articulo['image'] = base + imagen
+    migas_ld = {
+        '@context': 'https://schema.org',
+        '@type': 'BreadcrumbList',
+        'itemListElement': [{'@type': 'ListItem', 'position': i, 'name': n, 'item': u}
+                            for i, (n, u) in enumerate(migas, 1)],
+    }
+    texto = json.dumps([articulo, migas_ld], ensure_ascii=False).replace('<', '\\u003c')
+    return mark_safe(texto)
 
 
 def tag_detail(request, tag):

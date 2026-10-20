@@ -487,3 +487,60 @@ class IATemaPermitidoTests(TestCase):
     def test_parecido_a_un_articulo_tambien_pasa(self):
         self.assertFalse(filtros.es_de_la_wiki('que es el protocolo zeta'))
         self.assertTrue(filtros.es_de_la_wiki('que es el protocolo zeta', articulo_relacionado=object()))
+
+
+@override_settings(CACHES=CACHE_TESTS)
+class SEOTests(TestCase):
+    """Meta descripción real, datos estructurados, buscador sin indexar y sitemap."""
+
+    @classmethod
+    def setUpTestData(cls):
+        user = User.objects.create(username='autor-seo')
+        cat = Category.objects.create(name='Linux', slug='linux')
+        cls.art = Article.objects.create(
+            title='Comandos de Linux', slug='comandos-linux', category=cat, author=user, is_published=True,
+            tags='linux, bash', content='# Título\n\nEstos son los **comandos** que uso a diario para administrar '
+            'servidores Debian y Ubuntu, con ejemplos reales de diagnóstico de disco, red y procesos. ' * 3)
+
+    def _html(self, url):
+        return self.client.get(url).content.decode()
+
+    def test_meta_descripcion_sale_del_texto_y_no_repite_el_titulo(self):
+        import re
+        html = self._html('/article/comandos-linux/')
+        desc = re.search(r'<meta name="description" content="([^"]*)"', html).group(1)
+        self.assertTrue(desc.startswith('Título Estos son los comandos'))
+        self.assertLessEqual(len(desc), 155)
+        self.assertNotIn('Artículo de Linux en la wiki', desc)
+        self.assertIn('<meta property="og:description" content="%s"' % desc, html)
+
+    def test_meta_descripcion_manual_tiene_prioridad(self):
+        Article.objects.filter(pk=self.art.pk).update(meta_description='Chuleta de comandos Linux.')
+        self.assertIn('content="Chuleta de comandos Linux."', self._html('/article/comandos-linux/'))
+
+    def test_datos_estructurados_validos(self):
+        import re
+        html = self._html('/article/comandos-linux/')
+        bloque = re.search(r'<script type="application/ld\+json">(.*?)</script>', html, re.S).group(1)
+        datos = json.loads(bloque)
+        self.assertEqual(datos[0]['@type'], 'TechArticle')
+        self.assertEqual(datos[1]['itemListElement'][-1]['name'], 'Comandos de Linux')
+        self.assertIn('article:published_time', html)
+        self.assertNotIn('- Wiki PG</title>', html)
+
+    def test_buscador_no_indexable_y_sitemap(self):
+        self.assertIn('<meta name="robots" content="noindex, follow">', self._html('/search/'))
+        sitemap = self._html('/sitemap.xml')
+        self.assertIn('/about/</loc>', sitemap)
+        self.assertNotIn('/search/</loc>', sitemap)
+
+    def test_linkedin_no_cambia_la_fecha_de_actualizacion(self):
+        from .models import LinkedInToken
+        from .tasks import publish_to_linkedin_task
+        LinkedInToken(access_token='x', author_id='y').save()
+        antes = Article.objects.get(pk=self.art.pk).updated_at
+        with mock.patch('wiki.linkedin.post_to_linkedin', return_value={}):
+            publish_to_linkedin_task.run(self.art.id)
+        art = Article.objects.get(pk=self.art.pk)
+        self.assertTrue(art.linkedin_published)
+        self.assertEqual(art.updated_at, antes)

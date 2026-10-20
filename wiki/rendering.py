@@ -45,6 +45,20 @@ def articulo_html(article):
     return cacheado('md:articulo:' + _version(article), _render, CACHE_RENDER)
 
 
+def descripcion(article, limite=155):
+    """Meta descripción: la escrita a mano o el inicio del artículo cortado en una palabra."""
+    if (article.meta_description or '').strip():
+        return article.meta_description.strip()
+
+    def _calcular():
+        texto = ' '.join(strip_tags(markdown.markdown(article.content)).split())
+        if len(texto) <= limite:
+            return texto
+        corte = texto[:limite - 1].rsplit(' ', 1)[0].rstrip(' ,.;:')
+        return corte + '…'
+    return cacheado('md:desc:%d:' % limite + _version(article), _calcular, CACHE_RENDER)
+
+
 def resumen(article, longitud=200):
     """Primeros caracteres del artículo en texto plano, para listados."""
     return cacheado('md:resumen:' + _version(article),

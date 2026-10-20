@@ -1,11 +1,18 @@
 {% extends 'wiki/base.html' %}
-{% block title %}{{ article.title }} - Wiki PG{% endblock %}
-{% block description %}{{ article.title }}. Artículo de {{ article.category.name }} en la wiki técnica de Pablo Gutiérrez Gracia.{% endblock %}
+{% block title %}{{ article.title }}{% endblock %}
+{% block description %}{{ descripcion }}{% endblock %}
 {% block og_title %}{{ article.title }}{% endblock %}
-{% block og_description %}{{ article.title }} - {{ article.category.name }}{% endblock %}
+{% block og_description %}{{ descripcion }}{% endblock %}
 {% block og_type %}article{% endblock %}
 {% block canonical %}/article/{{ article.slug }}/{% endblock %}
 {% block og_image %}{% if featured_image_url %}<meta property="og:image" content="https://wiki.pablogg.dev{{ featured_image_url }}">{% endif %}{% endblock %}
+{% block extra_head %}
+    <meta property="article:published_time" content="{{ article.created_at|date:'c' }}">
+    <meta property="article:modified_time" content="{{ article.updated_at|date:'c' }}">
+    <meta property="article:section" content="{{ article.category.name }}">
+    {% for tag in tags %}<meta property="article:tag" content="{{ tag }}">
+    {% endfor %}<script type="application/ld+json">{{ datos_estructurados }}</script>
+{% endblock %}
 
 {% block path %}
 {% if article.category.parent %}<li><a href="{% url 'wiki:category_detail' article.category.parent.slug %}">{{ article.category.parent.slug }}</a></li>{% endif %}

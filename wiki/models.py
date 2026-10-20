@@ -48,6 +48,10 @@ class Article(models.Model):
     is_published = models.BooleanField(default=False)
     publish_scheduled = models.DateTimeField(null=True, blank=True, help_text='Fecha y hora a la que se publicará automáticamente el artículo en la wiki')
     publish_task_id = models.CharField(max_length=100, blank=True, null=True)
+    meta_description = models.CharField(
+        max_length=160, blank=True,
+        help_text='Resumen para Google y LinkedIn (unos 155 caracteres). Si se deja vacío, se genera '
+                  'automáticamente con el inicio del artículo.')
     tags = models.CharField(max_length=300, blank=True, help_text='Etiquetas separadas por comas. Ej: linux, docker, ansible')
     featured_image = models.ImageField(upload_to='articles/', blank=True, null=True, help_text='Imagen destacada del articulo')
     linkedin_text = models.TextField(blank=True, help_text='Texto personalizado para LinkedIn. Si se deja vacío se usará el título.')

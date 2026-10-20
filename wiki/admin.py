@@ -39,7 +39,7 @@ class ArticleAdmin(admin.ModelAdmin):
     prepopulated_fields = {'slug': ('title',)}
     fieldsets = (
         ('Contenido', {
-            'fields': ('title', 'slug', 'content', 'category', 'author', 'tags', 'is_published',
+            'fields': ('title', 'slug', 'meta_description', 'content', 'category', 'author', 'tags', 'is_published',
                        'publish_scheduled', 'featured_image'),
         }),
         ('LinkedIn', {

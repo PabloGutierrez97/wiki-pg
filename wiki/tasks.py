@@ -24,7 +24,7 @@ def publish_to_linkedin_task(article_id):
         result = post_to_linkedin(token.access_token, token.author_id, text, image_path=image_path)
 
         article.linkedin_published = True
-        article.save()
+        article.save(update_fields=['linkedin_published'])   # sin tocar updated_at (sitemap y "Actualizado")
 
         # Primer comentario con el enlace al artículo
         post_urn = result.get('id')
