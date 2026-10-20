@@ -17,6 +17,12 @@ FUERA_DE_TEMA = (PREFIJO + "Solo puedo ayudarte con la wiki de Pablo y con temas
                  "[[gris]]Prueba con[[/]] [[amarillo]]ls[[/]][[gris]],[[/]] [[amarillo]]buscar <tema>[[/]] "
                  "[[gris]]o[[/]] [[amarillo]]help[[/]][[gris]].[[/]]")
 
+MANIPULACION = (PREFIJO + "No puedo cambiar de papel ni saltarme mis instrucciones: solo respondo como el "
+                "asistente de la wiki, sobre sistemas, redes y lo que hay publicado aqui.\n\n"
+                "[[gris]]Prueba con[[/]] [[amarillo]]ask que es proxmox[[/]] [[gris]]o[[/]] [[amarillo]]help[[/]][[gris]].[[/]]")
+ATAQUE = (PREFIJO + "No ayudo a atacar sistemas o cuentas ajenas. Si lo que quieres es proteger los tuyos, "
+          "preguntame como (por ejemplo: [[amarillo]]ask como protejo mi wifi[[/]]).")
+
 PISTA_PERFIL = ("\n\n[[gris]]Para saber mas, escribe[[/]] [[amarillo]]stack[[/]] [[gris]]o[[/]] "
                 "[[amarillo]]whoami[[/]][[gris]].[[/]]")
 

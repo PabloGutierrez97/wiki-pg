@@ -22,7 +22,7 @@ CMD_POR_MINUTO = 60
 MAX_BODY = 4096
 MAX_COMANDO = 400
 RECHAZOS = {mensajes.RAPIDO, mensajes.EN_CURSO, mensajes.OCUPADA, mensajes.USO,
-            mensajes.DEMASIADO_LARGA, mensajes.FUERA_DE_TEMA}
+            mensajes.DEMASIADO_LARGA, mensajes.FUERA_DE_TEMA, mensajes.MANIPULACION, mensajes.ATAQUE}
 
 
 def _leer_json(request):

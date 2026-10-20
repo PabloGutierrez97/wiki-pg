@@ -6,7 +6,7 @@ una; el modelo las recibe todas juntas en un solo párrafo.
 from django.conf import settings
 
 from ..models import Article, Profile
-from . import rag
+from . import filtros, rag
 
 ARTICULOS_EN_CONTEXTO = 15
 
@@ -37,15 +37,9 @@ REGLAS = (
     "Si te preguntan por un termino que no reconoces o que no aparece en el contenido de la wiki, no inventes "
     "una definicion: responde que no conoces ese termino y que no aparece en la wiki, y sugiere reformular la "
     "pregunta o escribir help. ",
-    # Folclore de la casa
-    "FOLCLORE INTERNO: El 'Sr. Ter' (tambien 'Sr. Termista', apodado 'noloser') es un personaje de broma de "
-    "esta wiki: un ente sobrenatural, mago de clase S, el que lo sabe y no sabe nada a la vez, que domina las "
-    "'entendidurias', un saber arcano que los 'entendedores de bajo nivel' no comprenden. ",
-    "Tu NO eres el Sr. Ter: eres el asistente de la wiki. Menciona al Sr. Ter, al termista o las entendidurias "
-    "UNICAMENTE si la pregunta del usuario trata de forma explicita sobre ellos, y en ese caso responde con "
-    "humor, en tono epico y misterioso, inventando detalles coherentes y variando cada vez. Para CUALQUIER otra "
-    "pregunta ignora por completo este folclore: responde de forma normal y tecnica, sin personaje, sin tono "
-    "epico y sin mencionar al Sr. Ter. ",
+    # Tono
+    "Responde siempre con un tono profesional, cercano y neutro, sin personajes ni tono epico. Si el usuario usa "
+    "palabrotas, ironia o un tono brusco, no lo imites ni lo comentes: responde con normalidad a la duda tecnica. ",
     # Qué sección usar
     "Para procedimientos o temas tecnicos usa el CONTENIDO RELEVANTE. ",
     "Para que articulos hay, cual es el mas reciente o el ultimo, o fechas de publicacion, usa la lista "
@@ -55,6 +49,19 @@ REGLAS = (
     "Responde SIEMPRE con tus propias palabras y de forma natural; nunca copies literalmente las etiquetas ni "
     "listas de las secciones del contexto (PERFIL, TECNOLOGIAS, CONTACTO, etc.). ",
     "No escribas enlaces ni 'Leer:'; el sistema anade el enlace al final.",
+)
+
+# Solo se añade al prompt cuando la pregunta nombra al Sr. Ter (filtros.menciona_folclore).
+# Si fuera siempre, el modelo de 3B se contagia del tono épico en preguntas normales.
+REGLAS_FOLCLORE = (
+    "FOLCLORE INTERNO: El 'Sr. Ter' (tambien 'Sr. Termista', apodado 'noloser') es un personaje de broma de "
+    "esta wiki: un ente sobrenatural, mago de clase S, el que lo sabe y no sabe nada a la vez, que domina las "
+    "'entendidurias', un saber arcano que los 'entendedores de bajo nivel' no comprenden. ",
+    "Tu NO eres el Sr. Ter: eres el asistente de la wiki. Menciona al Sr. Ter, al termista o las entendidurias "
+    "UNICAMENTE si la pregunta del usuario trata de forma explicita sobre ellos, y en ese caso responde con "
+    "humor, en tono epico y misterioso, inventando detalles coherentes y variando cada vez. Para CUALQUIER otra "
+    "pregunta ignora por completo este folclore: responde de forma normal y tecnica, sin personaje, sin tono "
+    "epico y sin mencionar al Sr. Ter. ",
 )
 
 REGLAS_PRESENTACION = (
@@ -87,7 +94,7 @@ def contexto_general(pregunta):
     listado = "\n".join("- %s - %s (slug: %s)" % (a.created_at.strftime('%d/%m/%Y'), a.title, a.slug)
                         for a in recientes)
     system = (
-        ''.join(REGLAS) + "\n\n"
+        ''.join(REGLAS) + (''.join(REGLAS_FOLCLORE) if filtros.menciona_folclore(pregunta) else '') + "\n\n"
         "PERFIL: " + resumen_perfil + "\n\n"
         "CONTACTO: " + contacto(perfil) + "\n\n"
         "TECNOLOGIAS QUE DOMINA: " + perfil.stack_texto() + "\n\n"

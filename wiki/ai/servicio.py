@@ -28,7 +28,7 @@ MAX_PREGUNTA = 300
 # Respuestas idénticas se sirven desde caché durante este tiempo.
 CACHE_RESPUESTA = 15 * 60
 # Cambiar la versión invalida todas las respuestas guardadas (p. ej. al cambiar el prompt).
-VERSION_CACHE = 'v4'
+VERSION_CACHE = 'v5'
 
 # Registro de preguntas (sin IP) para poder revisar qué contesta la IA: journalctl -u wiki_pg | grep ' ia '
 log = logging.getLogger('wiki.ia')
@@ -58,6 +58,10 @@ def preguntar(pregunta, ip):
     if (excede_limite('ask:min:' + ip, ASK_POR_MINUTO, 60)
             or excede_limite('ask:hora:' + ip, ASK_POR_HORA, 3600)):
         return mensajes.RAPIDO
+    no_permitida = filtros.peticion_no_permitida(pregunta)
+    if no_permitida:
+        log.info('ia %s %r', no_permitida, pregunta[:200])
+        return mensajes.ATAQUE if no_permitida == 'ataque' else mensajes.MANIPULACION
     fija = filtros.respuesta_fija(pregunta)
     if fija:
         return fija

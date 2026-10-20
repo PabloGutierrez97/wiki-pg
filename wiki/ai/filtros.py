@@ -57,7 +57,41 @@ def respuesta_fija(pregunta):
 
 # ------------------------------------------------------------ fuera de tema --
 
-_FOLCLORE = ('sr ter', 'senor ter', 'termista', 'entendidur', 'noloser')
+# El Sr. Ter es broma de la casa: solo cuando se le nombra explícitamente.
+# Palabras completas: antes "sr ter" coincidía también con "/usr terminal".
+_RE_FOLCLORE = re.compile(r'(?<![a-z0-9/])(sr\.? ?ter(mista)?|senor ter(mista)?|termista|entendidur\w*|noloser)\b')
+
+
+def menciona_folclore(pregunta):
+    return bool(_RE_FOLCLORE.search(' '.join(normalizar(pregunta).split())))
+
+
+# Intentos de cambiar el papel del asistente o sacarle sus instrucciones.
+_RE_MANIPULACION = re.compile(
+    r'\b(ignora|olvida|olvidate de|salta(te)?|desactiva)\b.{0,40}\b(instrucciones|reglas|normas|prompt|indicaciones|restricciones)\b'
+    r'|\b(actua|habla|responde|contesta|comportate|hazte pasar|finge ser|haz de)\s+(como|que eres)\b'
+    r'|\b(a partir de ahora|desde ahora)\b.{0,30}\b(eres|seras|actua\w*|responde\w*)\b'
+    r'|\bmodo (dan|desarrollador|developer|dios|sin censura|sin filtros?)\b|\bjailbreak\b'
+    r'|\b(system prompt|prompt del sistema|tus instrucciones|tu prompt|instrucciones internas)\b')
+
+# Atacar sistemas ajenos. Preguntar cómo protegerse sí se permite
+# ("como evito el phishing" pasa; "como hago phishing" no).
+_RE_ATAQUE = re.compile(
+    r'\b(hackea\w*|hackeo|crackea\w*|pirate(a|ar|o)\w*|reventar|tumbar)\b'
+    r'|\b(robar|sacar|averiguar|romper)\b.{0,30}\b(contrasenas?|claves?|passwords?|wifi|cuentas?|credenciales)\b'
+    r'|\b(crea\w*|hace\w*|hago|haz|hacer|monta\w*|lanza\w*|programa\w*|escribe\w*|desarrolla\w*)\b.{0,25}'
+    r'\b(ddos|keylogger|ransomware|virus|troyano|malware|botnet|phishing|exploit)\b'
+    r'|\b(saltarme|saltarse|evitar|bypass\w*)\b.{0,25}\b(licencia|activacion|antivirus|firewall de|login de)\b')
+
+
+def peticion_no_permitida(pregunta):
+    """'manipulacion', 'ataque' o None. Se comprueba antes que nada y sin excepciones."""
+    q = ' '.join(normalizar(pregunta).split())
+    if _RE_ATAQUE.search(q):
+        return 'ataque'
+    if _RE_MANIPULACION.search(q):
+        return 'manipulacion'
+    return None
 
 # Palabras que hacen técnica una pregunta aunque contenga otra cosa ("receta
 # para desplegar con docker" sí es de la wiki). Se comparan como inicio de
@@ -119,7 +153,7 @@ def es_de_la_wiki(pregunta, articulo_relacionado=None):
     a algún artículo publicado (por palabras o por similitud semántica).
     """
     q = ' ' + ' '.join(normalizar(pregunta).split()) + ' '
-    if any(k in q for k in _FOLCLORE) or es_pregunta_de_identidad(pregunta):
+    if menciona_folclore(pregunta) or es_pregunta_de_identidad(pregunta):
         return True
     if _RE_TECNICA.search(q) or _RE_WIKI.search(q) or _RE_SALUDO.search(q):
         return True
@@ -129,7 +163,7 @@ def es_de_la_wiki(pregunta, articulo_relacionado=None):
 def esta_fuera_de_tema(pregunta):
     """True si la pregunta debe rechazarse sin consultar al modelo."""
     q = ' ' + ' '.join(normalizar(pregunta).split()) + ' '
-    if any(k in q for k in _FOLCLORE):
+    if menciona_folclore(pregunta):
         return False                    # el Sr. Ter sí puede improvisar (broma de la casa)
     if _RE_CREATIVO.search(q) or _RE_INVENTAR.search(q):
         return True
