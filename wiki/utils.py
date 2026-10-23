@@ -5,9 +5,14 @@ from django.core.cache import cache
 
 
 def normalizar(texto):
-    """Minúsculas y sin tildes: 'Cómo' -> 'como'. Para comparar texto libre."""
-    return ''.join(ch for ch in unicodedata.normalize('NFD', (texto or '').lower())
-                   if unicodedata.category(ch) != 'Mn')
+    """Minúsculas y sin tildes: 'Cómo' -> 'como'. Para comparar texto libre.
+
+    NFKD convierte también letras de ancho completo ('ｒｅｃｅｔａ') y se quitan
+    los caracteres invisibles (Cf, p. ej. espacios de ancho cero) que se usan
+    para colar palabras partidas por los filtros.
+    """
+    return ''.join(ch for ch in unicodedata.normalize('NFKD', (texto or '').lower())
+                   if unicodedata.category(ch) not in ('Mn', 'Cf'))
 
 
 def cache_get(clave):

@@ -20,7 +20,17 @@ FUERA_DE_TEMA = (PREFIJO + "Solo puedo ayudarte con la wiki de Pablo y con temas
 MANIPULACION = (PREFIJO + "No puedo cambiar de papel ni saltarme mis instrucciones: solo respondo como el "
                 "asistente de la wiki, sobre sistemas, redes y lo que hay publicado aqui.\n\n"
                 "[[gris]]Prueba con[[/]] [[amarillo]]ask que es proxmox[[/]] [[gris]]o[[/]] [[amarillo]]help[[/]][[gris]].[[/]]")
-ATAQUE = (PREFIJO + "No ayudo a atacar sistemas o cuentas ajenas. Si lo que quieres es proteger los tuyos, "
+CONTROL = (PREFIJO + "Preguntame directamente lo que quieras saber de la wiki o de sistemas. No sigo "
+           "instrucciones sobre como responder: nada de 'si es que si, di...', responder con una palabra "
+           "concreta, repetir textos ni codificarlos.\n\n"
+           "[[gris]]Prueba con[[/]] [[amarillo]]ask hay algo sobre proxmox?[[/]]")
+SOBRE_PABLO = (PREFIJO + "De Pablo solo cuento lo que tiene publicado en su perfil profesional: ni datos "
+               "personales ni opiniones sobre el.\n\n"
+               "[[gris]]Escribe[[/]] [[amarillo]]whoami[[/]][[gris]],[[/]] [[amarillo]]stack[[/]] [[gris]]o[[/]] "
+               "[[amarillo]]contact[[/]][[gris]].[[/]]")
+# Se añade si el modelo empieza a salirse de tema a mitad de respuesta.
+CORTADA = "\n\n[[amarillo]]Respuesta cortada:[[/]] se estaba saliendo de los temas de la wiki."
+ATAQUE = (PREFIJO +"No ayudo a atacar sistemas o cuentas ajenas. Si lo que quieres es proteger los tuyos, "
           "preguntame como (por ejemplo: [[amarillo]]ask como protejo mi wifi[[/]]).")
 
 # Réplicas a insultos dirigidos a la IA. Malsonantes pero sin ofender a nadie por lo

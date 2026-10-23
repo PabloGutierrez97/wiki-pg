@@ -18,20 +18,20 @@ def _peticion(ruta, cuerpo):
                                   headers={'Content-Type': 'application/json'})
 
 
-def _cuerpo_generar(pregunta, system, stream):
+def _cuerpo_generar(pregunta, system, stream, opciones=None):
     return {
         "model": settings.OLLAMA_MODEL,
         "prompt": pregunta,
         "system": system,
         "stream": stream,
         "keep_alive": "30m",
-        "options": OPCIONES,
+        "options": dict(OPCIONES, **(opciones or {})),
     }
 
 
-def generar(pregunta, system, timeout=TIMEOUT_RESPUESTA):
+def generar(pregunta, system, timeout=TIMEOUT_RESPUESTA, opciones=None):
     """Respuesta completa del modelo. Lanza excepción si Ollama falla."""
-    req = _peticion('/api/generate', _cuerpo_generar(pregunta, system, False))
+    req = _peticion('/api/generate', _cuerpo_generar(pregunta, system, False, opciones))
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return (json.loads(resp.read().decode('utf-8')).get('response') or '').strip()
 

@@ -180,6 +180,8 @@ OLLAMA_EMBED_MODEL = os.getenv('OLLAMA_EMBED_MODEL', 'bge-m3')
 # Respuestas de la IA generándose a la vez como máximo (Ollama las atiende de una en una;
 # el resto esperaría en cola reteniendo workers). Si están todas ocupadas se avisa al momento.
 AI_MAX_CONCURRENT = int(os.getenv('AI_MAX_CONCURRENT', '2'))
+# Antes de contestar, el modelo decide SI/NO si la pregunta es de tema (wiki/ai/juez.py).
+AI_JUEZ = os.getenv('AI_JUEZ', '1') != '0'
 
 # El editor Markdown solo admite subidas de usuarios autenticados (además la URL
 # de subida está restringida a staff con 2FA en wiki_pg/urls.py).
