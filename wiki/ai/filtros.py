@@ -22,9 +22,18 @@ _IDENTIDAD = (
 )
 
 
+# "quien creo esta wiki", "quien ha hecho esta web", "de quien es esta pagina"...
+_RE_AUTORIA = re.compile(
+    r'\bquien(es)?\b.{0,15}\b(creo|ha creado|han creado|hizo|ha hecho|han hecho|desarrollo|ha desarrollado|'
+    r'programo|ha programado|monto|ha montado|mantiene|administra|escribe|escribio|lleva|esta detras)\b'
+    r'.{0,25}\b(wiki|web|pagina|sitio|blog|esto|aqui)\b'
+    r'|\bde quien es (la|esta|este|el) (wiki|web|pagina|sitio|blog)\b'
+    r'|\bquien es (el|la) (autor|autora|creador|duen[oa]|responsable)\b')
+
+
 def es_pregunta_de_identidad(pregunta):
-    q = normalizar(pregunta)
-    return any(k in q for k in _IDENTIDAD)
+    q = ' '.join(normalizar(pregunta).split())
+    return any(k in q for k in _IDENTIDAD) or bool(_RE_AUTORIA.search(q))
 
 
 # -------------------------------------------------------- respuestas fijas --
@@ -35,6 +44,7 @@ _COMO_FUNCIONA = (
     'como funcionas', 'como trabajas', 'como estas hecha', 'como estas programad', 'como estas construid',
     'como estas basad', 'estas configurad', 'te configuraron', 'fuiste configurad', 'te programaron',
     'te han programado', 'te hicieron', 'te crearon', 'te construyeron', 'te desarrollaron', 'te montaron',
+    'quien te creo', 'quien te hizo', 'quien te ha creado', 'quien te ha hecho', 'quien te programo',
     'que modelo eres', 'que modelo usas', 'que ia eres', 'con que estas hecha', 'en que estas basad',
 )
 _COSENO = ('coseno', 'embedding', 'como funciona el rag', 'que es el rag', 'como encuentras los articulos',
