@@ -1,4 +1,5 @@
 """Textos fijos de la IA. Usan el marcado de colores del terminal: [[color]]texto[[/]]."""
+import re
 
 PREFIJO = "[[verde]]IA[[/]] [[gris]].[[/]] "
 
@@ -82,6 +83,21 @@ def leer(*slugs):
     if len(slugs) == 1:
         return "\n\n[[gris]]Leer:[[/]] /article/" + slugs[0] + "/"
     return "\n\n[[gris]]Leer:[[/]]" + "".join("\n- /article/%s/" % s for s in slugs)
+
+
+def articulos_sobre(tema, articulos):
+    """Lista de artículos de un tema, sin modelo."""
+    tema = re.sub(r'[\[\]*`]', '', tema)[:60]
+    if not articulos:
+        return (PREFIJO + "La wiki todavia no tiene articulos sobre **" + tema + "**.\n\n"
+                "[[gris]]Prueba con[[/]] [[amarillo]]buscar " + tema + "[[/]] [[gris]]o mira todo con[[/]] "
+                "[[amarillo]]ls[[/]][[gris]].[[/]]")
+    n = len(articulos)
+    cabecera = ("Sobre **%s** hay un articulo en la wiki:" % tema if n == 1
+                else "Sobre **%s** hay %d articulos en la wiki:" % (tema, n))
+    lineas = ["- **%s** [[gris]](%s)[[/]]\n  /article/%s/" % (a.title, a.created_at.strftime('%d/%m/%Y'), a.slug)
+              for a in articulos]
+    return PREFIJO + cabecera + "\n" + "\n".join(lineas)
 
 
 def ultimo_articulo(articulo):

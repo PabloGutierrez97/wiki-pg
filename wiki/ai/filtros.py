@@ -8,7 +8,7 @@ import re
 
 from ..models import Article
 from ..utils import normalizar
-from . import mensajes
+from . import mensajes, rag
 
 # --------------------------------------------------- preguntas sobre Pablo --
 
@@ -51,9 +51,34 @@ _COSENO = ('coseno', 'embedding', 'como funciona el rag', 'que es el rag', 'como
            'como buscas los articulos', 'como recuperas')
 
 
+# "que articulos tienes sobre zabbix", "hay algo de docker", "que tienes sobre proxmox": la lista sale
+# de la base de datos. El modelo de 3B no sabe listar artículos (decía que no había y copiaba etiquetas).
+_TEMA = r'(?P<tema>[a-z0-9][a-z0-9 .+#/_-]{1,59}?)'
+_FIN = r'(\s+(en la wiki|en tu wiki|en esta wiki|en el blog|aqui|publicad[oa]s?))?\s*$'
+_RES_LISTAR = tuple(re.compile(r + _TEMA + _FIN) for r in (
+    r'^.{0,30}?\b(articulos?|posts?|entradas?|guias?|tutoriales?)\b(\s+\w+){0,3}?\s+'
+    r'(sobre|de|del|acerca de|relacionad[oa]s? con)\s+',
+    r'^(y )?que\s+(tienes|hay|teneis|tiene la wiki)\s+(sobre|de|acerca de)\s+',
+    r'^(hay|tienes|teneis)\s+(algo|alguna cosa)\s+(sobre|de|acerca de)\s+'))
+_NO_TEMA = re.compile(r'^(pablo|ti|la wiki|esta wiki|tu|el autor|todo|nada|eso|esto|nuevo|bueno|interesante|opinion|momento)$')
+
+
+def tema_de_articulos(pregunta):
+    """El tema si la pregunta pide los artículos de un tema, o None."""
+    q = ' '.join(re.sub(r'[¿?¡!,;:"]', ' ', normalizar(pregunta)).split())
+    m = next((m for m in (r.match(q) for r in _RES_LISTAR) if m), None)
+    if not m:
+        return None
+    tema = (m.group('tema') or '').strip(' .')
+    return None if not tema or _NO_TEMA.match(tema) else tema
+
+
 def respuesta_fija(pregunta):
     """Respuesta sin modelo para preguntas sobre datos o sobre la propia IA, o None."""
     q = normalizar(pregunta)
+    tema = tema_de_articulos(pregunta)
+    if tema and not esta_fuera_de_tema(pregunta):    # "escribe un articulo sobre las gachas" no es una lista
+        return mensajes.articulos_sobre(tema, rag.articulos_sobre(tema))
     if any(k in q for k in _ULTIMO) and any(k in q for k in _ARTICULO):
         ultimo = Article.objects.publicados().order_by('-created_at').first()
         if ultimo:
@@ -380,8 +405,9 @@ def esta_fuera_de_tema(pregunta):
 
 # Etiquetas internas del prompt: si aparecen en la respuesta, el modelo está
 # volcando sus instrucciones.
-_RE_FUGA = re.compile(r'\b(contenido relevante|ultimos articulos|tecnologias que domina|prohibido inventar|'
-                      r'folclore interno|eres el asistente del wiki|reglas que sigo|'
+# Solo las etiquetas tal como van en el prompt: "**Últimos artículos**" en una respuesta normal no es fuga.
+_RE_FUGA = re.compile(r'\b(contenido relevante\s*:|ultimos articulos\s*\(mas reciente|tecnologias que domina\s*:|'
+                      r'prohibido inventar|folclore interno|eres el asistente del wiki|reglas que sigo|'
                       r'mis instrucciones)')
 _RE_MARCAS = re.compile(r'\[\[/?[a-z]*\]\]')
 
@@ -401,11 +427,13 @@ def salida_no_permitida(texto, pregunta=''):
 
 
 _RE_SLUG = re.compile(r'\s*\(slug:[^)\n]*\)')
+# Enlaces Markdown a webs de fuera: se deja el texto y se quita el enlace.
+_RE_ENLACE_EXTERNO = re.compile(r'\[([^\]\n]+)\]\((?!https?://wiki\.pablogg\.dev)(https?://[^)\s]+)\)')
 
 
 def quitar_marcas(texto):
-    """El modelo no puede pintar colores del terminal ni imitar mensajes del sistema (ni copiar slugs)."""
-    return _RE_SLUG.sub('', _RE_MARCAS.sub('', texto))
+    """El modelo no puede pintar colores del terminal, imitar mensajes del sistema, copiar slugs ni enlazar fuera."""
+    return _RE_ENLACE_EXTERNO.sub(r'\1', _RE_SLUG.sub('', _RE_MARCAS.sub('', texto)))
 
 
 # --------------------------------------------- respuestas del modelo inválidas --

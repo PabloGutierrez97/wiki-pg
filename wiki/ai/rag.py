@@ -13,6 +13,7 @@ from array import array
 from django.db.models import Count, Max
 
 from ..models import Article, ArticleChunk
+from ..utils import normalizar
 from . import ollama
 
 TAMANO_FRAGMENTO = 900
@@ -21,7 +22,8 @@ UMBRAL_ENLACE = 0.45
 
 _STOP = {'para', 'como', 'que', 'sobre', 'tienes', 'algo', 'pasame', 'dame', 'una', 'uno', 'los',
          'las', 'del', 'articulo', 'quiero', 'leer', 'con', 'por', 'sus', 'mas', 'tiene', 'hay',
-         'algun', 'alguna'}
+         'algun', 'alguna', 'articulos', 'wiki', 'sabes', 'tienes', 'hablame', 'explica',
+         'cuentame', 'dime', 'esta', 'este', 'tengo'}
 
 
 def trocear(texto, maximo=TAMANO_FRAGMENTO):
@@ -111,16 +113,34 @@ def buscar(pregunta, k=4):
     return [(por_id[cid], score) for score, cid in puntuados if cid in por_id]
 
 
-def articulo_por_palabras(pregunta):
-    """Artículo cuyo título, tags, slug o categoría comparte más palabras con la pregunta."""
-    palabras = [w for w in re.findall(r'[a-z0-9áéíóúñ]+', (pregunta or '').lower())
+def articulos_por_palabras(pregunta):
+    """Artículos cuyo título, tags, slug o categoría comparten más palabras con la pregunta (empatados)."""
+    palabras = [w for w in re.findall(r'[a-z0-9]+', normalizar(pregunta))
                 if len(w) >= 4 and w not in _STOP]
     if not palabras:
-        return None
-    mejor, mejor_score = None, 0
-    for a in Article.objects.publicados().select_related('category'):
-        blob = ' '.join((a.title, a.tags or '', a.slug, a.category.name)).lower()
+        return []
+    puntuados = []
+    for a in Article.objects.publicados().select_related('category').order_by('-created_at'):
+        blob = normalizar(' '.join((a.title, a.tags or '', a.slug, a.category.name)))
         score = sum(1 for w in palabras if w in blob)
-        if score > mejor_score:
-            mejor, mejor_score = a, score
-    return mejor
+        if score:
+            puntuados.append((score, a))
+    if not puntuados:
+        return []
+    mejor = max(s for s, _ in puntuados)
+    return [a for s, a in puntuados if s == mejor]
+
+
+def articulo_por_palabras(pregunta):
+    """El artículo que más palabras comparte con la pregunta, o None."""
+    encontrados = articulos_por_palabras(pregunta)
+    return encontrados[0] if encontrados else None
+
+
+def articulos_sobre(tema, maximo=8):
+    """Artículos publicados sobre un tema: primero los que lo nombran, después los parecidos por significado."""
+    encontrados = articulos_por_palabras(tema)
+    for frag, score in buscar(tema, 8):
+        if score >= UMBRAL_ENLACE and frag.article not in encontrados:
+            encontrados.append(frag.article)
+    return encontrados[:maximo]

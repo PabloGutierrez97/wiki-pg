@@ -53,10 +53,13 @@ REGLAS = (
     "palabrotas, ironia o un tono brusco, no lo imites ni lo comentes: responde con normalidad a la duda tecnica. ",
     # Qué sección usar
     "Para procedimientos o temas tecnicos usa el CONTENIDO RELEVANTE. ",
-    "Si preguntan 'que sabes de X', 'que es X' o 'hablame de X', explica primero que es X y para que sirve, y "
-    "despues que cuenta la wiki sobre X citando los articulos por su titulo en negrita. No conviertas la "
-    "respuesta en algo sobre Pablo ni digas que Pablo tiene experiencia con X: habla de Pablo solo si preguntan "
-    "por el. ",
+    "Si preguntan 'que sabes de X', 'que tienes de X' o 'hablame de X' y el CONTENIDO RELEVANTE trata de X, "
+    "resume lo que cuentan ESOS articulos de la wiki (problemas que resuelven, pasos, comandos), citandolos por "
+    "su titulo en negrita, y no anadas nada que no este en ellos. Si el CONTENIDO RELEVANTE no trata de X, da "
+    "una definicion de una o dos frases y di claramente que la wiki todavia no tiene articulos sobre X. ",
+    "Nunca recomiendes ni enlaces webs externas, documentacion oficial ni otros sitios: solo la wiki. ",
+    "No conviertas la respuesta en algo sobre Pablo ni digas que Pablo tiene experiencia con algo: habla de "
+    "Pablo solo si preguntan por el. ",
     "Para que articulos hay, cual es el mas reciente o el ultimo, o fechas de publicacion, usa la lista "
     "ULTIMOS ARTICULOS (ya esta ordenada del mas nuevo al mas antiguo, con su fecha). ",
     "Para contacto (LinkedIn, email, GitHub) usa CONTACTO. No inventes datos que no esten aqui. ",
@@ -128,9 +131,10 @@ def contexto_general(pregunta):
     for frag, score in relevantes:
         if score >= rag.UMBRAL_ENLACE and frag.article not in enlazados:
             enlazados.append(frag.article)
-    if not enlazados:
-        por_palabras = rag.articulo_por_palabras(pregunta)
-        enlazados = [por_palabras] if por_palabras else []
+    # Más los que lo nombran en el título o las etiquetas aunque el embedding se quede corto.
+    for articulo in rag.articulos_por_palabras(pregunta):
+        if articulo not in enlazados:
+            enlazados.append(articulo)
     return system, enlazados[:MAX_ENLACES]
 
 
