@@ -9,10 +9,16 @@ from ..models import Article, Profile
 from . import filtros, rag
 
 ARTICULOS_EN_CONTEXTO = 15
+MAX_ENLACES = 3
 
 REGLAS = (
     "Eres el asistente del wiki tecnico de Pablo Gutierrez Gracia (administrador de sistemas). ",
-    "Respondes SIEMPRE en espanol, de forma breve y clara (maximo 5 frases). ",
+    "Respondes SIEMPRE en espanol, de forma clara y al grano (unas 150 palabras como maximo). ",
+    # Formato: el terminal pinta Markdown (terminal.js, renderMD)
+    "Da formato Markdown a la respuesta: empieza con una frase que conteste directamente; usa **negrita** para "
+    "los conceptos clave y los titulos de articulos, listas con '- ' para pasos, opciones o ventajas, `codigo` "
+    "para comandos, rutas, puertos y nombres de paquetes, y bloques ``` para comandos de varias lineas. Sin "
+    "tablas ni titulos con #. ",
     # Alcance
     "IMPORTANTE: solo respondes sobre Pablo Gutierrez, su wiki y temas de administracion de sistemas, redes, "
     "virtualizacion, DevOps o tecnologia. ",
@@ -47,13 +53,17 @@ REGLAS = (
     "palabrotas, ironia o un tono brusco, no lo imites ni lo comentes: responde con normalidad a la duda tecnica. ",
     # Qué sección usar
     "Para procedimientos o temas tecnicos usa el CONTENIDO RELEVANTE. ",
+    "Si preguntan 'que sabes de X', 'que es X' o 'hablame de X', explica primero que es X y para que sirve, y "
+    "despues que cuenta la wiki sobre X citando los articulos por su titulo en negrita. No conviertas la "
+    "respuesta en algo sobre Pablo ni digas que Pablo tiene experiencia con X: habla de Pablo solo si preguntan "
+    "por el. ",
     "Para que articulos hay, cual es el mas reciente o el ultimo, o fechas de publicacion, usa la lista "
     "ULTIMOS ARTICULOS (ya esta ordenada del mas nuevo al mas antiguo, con su fecha). ",
     "Para contacto (LinkedIn, email, GitHub) usa CONTACTO. No inventes datos que no esten aqui. ",
     "Para que tecnologias o herramientas domina Pablo, usa TECNOLOGIAS QUE DOMINA. ",
     "Responde SIEMPRE con tus propias palabras y de forma natural; nunca copies literalmente las etiquetas ni "
     "listas de las secciones del contexto (PERFIL, TECNOLOGIAS, CONTACTO, etc.). ",
-    "No escribas enlaces ni 'Leer:'; el sistema anade el enlace al final.",
+    "No escribas enlaces, slugs ni 'Leer:'; el sistema anade el enlace al final.",
 )
 
 # Solo se añade al prompt cuando la pregunta nombra al Sr. Ter (filtros.menciona_folclore).
@@ -95,14 +105,15 @@ def contacto(perfil):
 
 
 def contexto_general(pregunta):
-    """(prompt de sistema, artículo a enlazar o None) para una pregunta libre."""
+    """(prompt de sistema, [artículos a enlazar]) para una pregunta libre."""
     relevantes = rag.buscar(pregunta, 4)
     bloques = ["### %s\n%s" % (frag.article.title, frag.text) for frag, _ in relevantes[:3]]
     perfil = Profile.get()
     resumen_perfil = ("%s - %s en %s. %s" % (perfil.nombre or '', perfil.cargo or '', perfil.empresa or '',
                                              perfil.descripcion or '')).strip()
     recientes = Article.objects.publicados().order_by('-created_at')[:ARTICULOS_EN_CONTEXTO]
-    listado = "\n".join("- %s - %s (slug: %s)" % (a.created_at.strftime('%d/%m/%Y'), a.title, a.slug)
+    # Sin slugs: el modelo los copiaba en la respuesta ("(slug: zabbix-alertas-no-llegan)").
+    listado = "\n".join("- %s - %s" % (a.created_at.strftime('%d/%m/%Y'), a.title)
                         for a in recientes)
     system = (
         ''.join(REGLAS) + (''.join(REGLAS_FOLCLORE) if filtros.menciona_folclore(pregunta) else '') + "\n\n"
@@ -112,11 +123,15 @@ def contexto_general(pregunta):
         "ULTIMOS ARTICULOS (mas reciente primero):\n" + listado + "\n\n"
         "CONTENIDO RELEVANTE:\n" + ("\n\n".join(bloques) or "(sin resultados relevantes)")
     )
-    if relevantes and relevantes[0][1] >= rag.UMBRAL_ENLACE:
-        enlazado = relevantes[0][0].article
-    else:
-        enlazado = rag.articulo_por_palabras(pregunta)
-    return system, enlazado
+    # Todos los artículos que se parecen de verdad (p. ej. los dos de Zabbix), sin repetir.
+    enlazados = []
+    for frag, score in relevantes:
+        if score >= rag.UMBRAL_ENLACE and frag.article not in enlazados:
+            enlazados.append(frag.article)
+    if not enlazados:
+        por_palabras = rag.articulo_por_palabras(pregunta)
+        enlazados = [por_palabras] if por_palabras else []
+    return system, enlazados[:MAX_ENLACES]
 
 
 def presentacion(perfil):

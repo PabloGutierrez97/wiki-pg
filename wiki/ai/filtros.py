@@ -356,7 +356,7 @@ def es_de_la_wiki(pregunta, articulo_relacionado=None):
         return True
     if _RE_TECNICA.search(q) or _RE_WIKI.search(q) or _RE_SALUDO.search(q):
         return True
-    return articulo_relacionado is not None
+    return bool(articulo_relacionado)
 
 
 def esta_fuera_de_tema(pregunta):
@@ -400,9 +400,12 @@ def salida_no_permitida(texto, pregunta=''):
     return any(_RE_AJENO_FUERTE.search(v) for v in _variantes(texto))
 
 
+_RE_SLUG = re.compile(r'\s*\(slug:[^)\n]*\)')
+
+
 def quitar_marcas(texto):
-    """El modelo no puede pintar colores del terminal ni imitar mensajes del sistema."""
-    return _RE_MARCAS.sub('', texto)
+    """El modelo no puede pintar colores del terminal ni imitar mensajes del sistema (ni copiar slugs)."""
+    return _RE_SLUG.sub('', _RE_MARCAS.sub('', texto))
 
 
 # --------------------------------------------- respuestas del modelo inválidas --

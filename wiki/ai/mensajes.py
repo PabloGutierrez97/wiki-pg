@@ -78,8 +78,10 @@ COSENO = (
     "rclone aunque no digas 'rclone'.")
 
 
-def leer(slug):
-    return "\n\n[[gris]]Leer:[[/]] /article/" + slug + "/"
+def leer(*slugs):
+    if len(slugs) == 1:
+        return "\n\n[[gris]]Leer:[[/]] /article/" + slugs[0] + "/"
+    return "\n\n[[gris]]Leer:[[/]]" + "".join("\n- /article/%s/" % s for s in slugs)
 
 
 def ultimo_articulo(articulo):

@@ -31,7 +31,7 @@ MAX_PREGUNTA = 300
 # Respuestas idénticas se sirven desde caché durante este tiempo.
 CACHE_RESPUESTA = 15 * 60
 # Cambiar la versión invalida todas las respuestas guardadas (p. ej. al cambiar el prompt).
-VERSION_CACHE = 'v6'
+VERSION_CACHE = 'v7'
 
 RECHAZO = {'ataque': mensajes.ATAQUE, 'manipulacion': mensajes.MANIPULACION,
            'control': mensajes.CONTROL, 'pablo': mensajes.SOBRE_PABLO}
@@ -144,8 +144,12 @@ def _generar(pregunta, clave, plaza, turno):
             yield from trozos_con_pausa(texto)
             return
 
-        system, enlazado = prompts.contexto_general(pregunta)
-        if (not filtros.es_de_la_wiki(pregunta, enlazado)
+        system, enlazados = prompts.contexto_general(pregunta)
+        if enlazados is None:
+            enlazados = []
+        elif not isinstance(enlazados, (list, tuple)):
+            enlazados = [enlazados]
+        if (not filtros.es_de_la_wiki(pregunta, enlazados)
                 or (not filtros.sin_juez(pregunta) and juez.es_de_tema(pregunta) is False)):
             log.info('ia fuera_de_tema %r', pregunta[:200])
             cache_set(clave, mensajes.FUERA_DE_TEMA, CACHE_RESPUESTA)
@@ -185,8 +189,8 @@ def _generar(pregunta, clave, plaza, turno):
         if not enviado:
             completa = False
             yield mensajes.PREFIJO + mensajes.SIN_RESPUESTA
-        elif enlazado:
-            enlace = mensajes.leer(enlazado.slug)
+        elif enlazados:
+            enlace = mensajes.leer(*[a.slug for a in enlazados])
             enviado.append(enlace)
             yield enlace
     except Exception:
