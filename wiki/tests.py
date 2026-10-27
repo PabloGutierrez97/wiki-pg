@@ -743,19 +743,40 @@ class IAInyeccionTests(TestCase):
         user = User.objects.create_user('autor-lista')
         for titulo, slug in (('Zabbix: alertas que no llegan', 'zabbix-alertas'), ('Proxies de Zabbix', 'zabbix-proxies'),
                              ('Rclone a Drive', 'rclone-drive')):
-            Article.objects.create(title=titulo, slug=slug, category=cat, author=user, content='x', is_published=True)
+            Article.objects.create(title=titulo, slug=slug, category=cat, author=user, is_published=True,
+                                   content='Se puede llevar a Kubernetes.' if slug == 'rclone-drive' else 'x')
         self.assertEqual(filtros.tema_de_articulos('¿Que articulos tienes sobre zabbix?'), 'zabbix')
         self.assertEqual(filtros.tema_de_articulos('¿Que tienes sobre Zabbix?'), 'zabbix')
         self.assertIsNone(filtros.tema_de_articulos('que sabes sobre zabbix'))
         self.assertIsNone(filtros.tema_de_articulos('que tienes sobre pablo'))
-        with mock.patch.object(rag, 'buscar', return_value=[]):
+        with mock.patch.object(rag, 'buscar') as semantica:
             texto = filtros.respuesta_fija('que articulos tienes sobre zabbix?')
-            nada = filtros.respuesta_fija('hay algun articulo sobre kubernetes')
+            menciona = filtros.respuesta_fija('que tienes sobre kubernetes?')
+            nada = filtros.respuesta_fija('hay algun articulo sobre terraform')
+        semantica.assert_not_called()          # la similitud daba artículos sin relación
+        self.assertIn('No hay articulos dedicados a **kubernetes**, pero este lo menciona', menciona)
+        self.assertIn('/article/rclone-drive/', menciona)
         self.assertIn('2 articulos', texto)
         self.assertIn('/article/zabbix-alertas/', texto)
         self.assertIn('/article/zabbix-proxies/', texto)
         self.assertNotIn('rclone', texto)
-        self.assertIn('todavia no tiene articulos sobre **kubernetes**', nada)
+        self.assertIn('todavia no tiene articulos sobre **terraform**', nada)
+
+    def test_recomendaciones_sin_modelo(self):
+        cat = Category.objects.create(name='Redes', slug='redes-rec')
+        user = User.objects.create_user('autor-rec')
+        for titulo, slug in (('WireGuard por el 443', 'wireguard-443'), ('Zabbix proxies', 'zabbix-prox'),
+                             ('Rclone a Drive', 'rclone-rec')):
+            Article.objects.create(title=titulo, slug=slug, category=cat, author=user, content='x', is_published=True)
+        for q in ['¿Qué artículo me recomiendas?', 'que me recomiendas leer', 'por donde empiezo?']:
+            texto = filtros.respuesta_fija(q)
+            self.assertIn('Te recomiendo empezar por estos', texto or '', q)
+            self.assertEqual(texto.count('/article/'), 3, q)
+        texto = filtros.respuesta_fija('que articulo me recomiendas sobre zabbix?')
+        self.assertIn('/article/zabbix-prox/', texto)
+        self.assertNotIn('/article/rclone-rec/', texto)
+        self.assertIsNone(filtros.respuesta_fija('que me recomiendas para cenar'))
+        self.assertIsNone(filtros.respuesta_fija('que antivirus me recomiendas'))
 
     def test_sin_enlaces_externos_ni_cortes_por_titulos_normales(self):
         self.assertEqual(filtros.quitar_marcas('ver [la doc](https://www.zabbix.com/manual)'), 'ver la doc')

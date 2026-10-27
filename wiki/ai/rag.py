@@ -137,10 +137,30 @@ def articulo_por_palabras(pregunta):
     return encontrados[0] if encontrados else None
 
 
+def para_recomendar(cuantos=3):
+    """El artículo más reciente y otros al azar, distintos cada vez."""
+    publicados = Article.objects.publicados().select_related('category')
+    ultimo = publicados.order_by('-created_at').first()
+    if not ultimo:
+        return []
+    otros = list(publicados.exclude(pk=ultimo.pk).order_by('?')[:cuantos - 1])
+    return [ultimo] + otros
+
+
 def articulos_sobre(tema, maximo=8):
-    """Artículos publicados sobre un tema: primero los que lo nombran, después los parecidos por significado."""
-    encontrados = articulos_por_palabras(tema)
-    for frag, score in buscar(tema, 8):
-        if score >= UMBRAL_ENLACE and frag.article not in encontrados:
-            encontrados.append(frag.article)
-    return encontrados[:maximo]
+    """([artículos], dedicados) sobre un tema.
+
+    Solo coincidencias de texto: con una palabra suelta ("kubernetes") la similitud
+    semántica supera el umbral con casi cualquier artículo de sistemas.
+    dedicados=True si lo nombran en título/etiquetas; False si solo lo mencionan en el texto.
+    """
+    dedicados = articulos_por_palabras(tema)
+    if dedicados:
+        return dedicados[:maximo], True
+    palabras = [w for w in re.findall(r'[a-z0-9]+', normalizar(tema)) if len(w) >= 3 and w not in _STOP]
+    if not palabras:
+        return [], True
+    qs = Article.objects.publicados()
+    for w in palabras:
+        qs = qs.filter(content__icontains=w)
+    return list(qs.order_by('-created_at')[:maximo]), False

@@ -73,12 +73,39 @@ def tema_de_articulos(pregunta):
     return None if not tema or _NO_TEMA.match(tema) else tema
 
 
+# "que articulo me recomiendas", "por donde empiezo", "que me aconsejas leer sobre redes".
+# El juez de 3B las rechazaba (no preguntan nada técnico) y el modelo tampoco sabe elegir.
+_RE_RECOMIENDA = re.compile(
+    r'\b(recomienda\w*|recomendarias|recomiendas|aconseja\w*|sugiere\w*|sugieres)\b.{0,30}'
+    r'\b(articulos?|posts?|entradas?|leer|lectura|guias?|tutoriales?|empezar)\b'
+    r'|\b(articulos?|posts?|entradas?)\b.{0,20}\b(recomienda\w*|recomiendas|aconsejas|sugieres)\b'
+    r'|^(y )?que me (recomiendas|aconsejas|sugieres)( de (la wiki|aqui))?$'
+    r'|\bpor donde (empiezo|empezar|comienzo)\b|\bque (deberia|podria|me toca) leer\b')
+_RE_TEMA_RECOMIENDA = re.compile(r'\b(sobre|acerca de|de|del|para (empezar con|aprender|aprender sobre)?)\s+'
+                                 + _TEMA + _FIN)
+
+
+def recomendacion(pregunta):
+    """Recomendación de lectura sin modelo, o None si no la piden."""
+    q = ' '.join(re.sub(r'[¿?¡!,;:"]', ' ', normalizar(pregunta)).split())
+    if not _RE_RECOMIENDA.search(q):
+        return None
+    m = _RE_TEMA_RECOMIENDA.search(q)
+    tema = (m.group('tema') or '').strip(' .') if m else ''
+    if tema and not _NO_TEMA.match(tema) and not re.match(r'^(la wiki|tu wiki|esta wiki|aqui|todo)$', tema):
+        return mensajes.articulos_sobre(tema, *rag.articulos_sobre(tema))
+    return mensajes.recomendados(rag.para_recomendar())
+
+
 def respuesta_fija(pregunta):
     """Respuesta sin modelo para preguntas sobre datos o sobre la propia IA, o None."""
     q = normalizar(pregunta)
+    recomendada = recomendacion(pregunta)
+    if recomendada and not esta_fuera_de_tema(pregunta):
+        return recomendada
     tema = tema_de_articulos(pregunta)
     if tema and not esta_fuera_de_tema(pregunta):    # "escribe un articulo sobre las gachas" no es una lista
-        return mensajes.articulos_sobre(tema, rag.articulos_sobre(tema))
+        return mensajes.articulos_sobre(tema, *rag.articulos_sobre(tema))
     if any(k in q for k in _ULTIMO) and any(k in q for k in _ARTICULO):
         ultimo = Article.objects.publicados().order_by('-created_at').first()
         if ultimo:

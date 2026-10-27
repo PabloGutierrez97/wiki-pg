@@ -85,7 +85,7 @@ def leer(*slugs):
     return "\n\n[[gris]]Leer:[[/]]" + "".join("\n- /article/%s/" % s for s in slugs)
 
 
-def articulos_sobre(tema, articulos):
+def articulos_sobre(tema, articulos, dedicados=True):
     """Lista de artículos de un tema, sin modelo."""
     tema = re.sub(r'[\[\]*`]', '', tema)[:60]
     if not articulos:
@@ -93,11 +93,28 @@ def articulos_sobre(tema, articulos):
                 "[[gris]]Prueba con[[/]] [[amarillo]]buscar " + tema + "[[/]] [[gris]]o mira todo con[[/]] "
                 "[[amarillo]]ls[[/]][[gris]].[[/]]")
     n = len(articulos)
-    cabecera = ("Sobre **%s** hay un articulo en la wiki:" % tema if n == 1
-                else "Sobre **%s** hay %d articulos en la wiki:" % (tema, n))
+    if not dedicados:
+        cabecera = ("No hay articulos dedicados a **%s**, pero %s:" %
+                    (tema, "este lo menciona" if n == 1 else "estos %d lo mencionan" % n))
+    elif n == 1:
+        cabecera = "Sobre **%s** hay un articulo en la wiki:" % tema
+    else:
+        cabecera = "Sobre **%s** hay %d articulos en la wiki:" % (tema, n)
     lineas = ["- **%s** [[gris]](%s)[[/]]\n  /article/%s/" % (a.title, a.created_at.strftime('%d/%m/%Y'), a.slug)
               for a in articulos]
     return PREFIJO + cabecera + "\n" + "\n".join(lineas)
+
+
+def recomendados(articulos):
+    """Recomendación de lectura: el último publicado y un par al azar."""
+    if not articulos:
+        return PREFIJO + "Todavia no hay articulos publicados."
+    lineas = []
+    for i, a in enumerate(articulos):
+        etiqueta = "el mas reciente" if i == 0 else a.category.name
+        lineas.append("- **%s** [[gris]](%s)[[/]]\n  /article/%s/" % (a.title, etiqueta, a.slug))
+    return (PREFIJO + "Te recomiendo empezar por estos:\n" + "\n".join(lineas) + "\n\n"
+            "[[gris]]Si buscas algo concreto:[[/]] [[amarillo]]ask que articulos tienes sobre <tema>[[/]]")
 
 
 def ultimo_articulo(articulo):
