@@ -313,8 +313,18 @@ a:hover { text-decoration-thickness: 2px; }
     border-top: 1px solid var(--line);
     font-size: var(--fs-sm);
     color: var(--ink-3);
-    display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem;
 }
+.footer-inner { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; }
+
+/* Ancho de cada tipo de página. En pantallas grandes el bloque se centra en
+   el espacio que deja la barra lateral en lugar de quedarse pegado a ella. */
+body { --page-w: 1120px; }
+body.p-home { --page-w: 1440px; }
+body.p-about { --page-w: 1080px; }
+body.p-article { --page-w: 1120px; }
+body.p-list { --page-w: 920px; }
+.main-inner, .footer-inner { max-width: var(--page-w); margin-inline: auto; }
+
 .site-footer a { color: var(--ink-2); }
 
 /* ---------- Encabezados de página ---------- */

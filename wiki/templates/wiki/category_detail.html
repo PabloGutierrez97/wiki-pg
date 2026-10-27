@@ -1,4 +1,5 @@
 {% extends 'wiki/base.html' %}
+{% block body_class %}p-list{% endblock %}
 
 {% block title %}{{ category.name }} - Wiki PG{% endblock %}
 {% block description %}{% if category.description %}{{ category.description }}{% else %}Artículos de {{ category.name }} en la wiki técnica de Pablo Gutiérrez Gracia.{% endif %}{% endblock %}
