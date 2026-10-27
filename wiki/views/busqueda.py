@@ -1,6 +1,6 @@
 import hashlib
 
-from django.db.models import Q
+from django.db.models import Case, IntegerField, Q, Value, When
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 
@@ -14,7 +14,8 @@ MIN_Q = 2
 MAX_Q = 100
 MAX_RESULTADOS = 30
 MAX_SUGERENCIAS = 6
-BUSQUEDAS_POR_MINUTO = 30
+# La página de búsqueda se actualiza mientras se escribe (wiki.js), con 300 ms de espera.
+BUSQUEDAS_POR_MINUTO = 60
 SUGERENCIAS_POR_MINUTO = 60
 
 
@@ -31,7 +32,12 @@ def _ids_busqueda(query, limite):
             Q(content__icontains=query) |
             Q(tags__icontains=query) |
             Q(category__name__icontains=query)
-        ).distinct().values_list('id', flat=True)[:limite]
+        ).annotate(
+            # Primero los que lo llevan en el título, luego en etiquetas o categoría, luego solo en el texto.
+            relevancia=Case(When(title__icontains=query, then=Value(0)),
+                            When(Q(tags__icontains=query) | Q(category__name__icontains=query), then=Value(1)),
+                            default=Value(2), output_field=IntegerField()),
+        ).order_by('relevancia', '-created_at').distinct().values_list('id', flat=True)[:limite]
     ), CACHE_BUSQUEDA)
 
 
@@ -52,7 +58,8 @@ def search(request):
         results = _articulos(query, MAX_RESULTADOS)
         for article in results:
             article.summary = resumen(article)
-    return render(request, 'wiki/search.html', {'query': query, 'results': results})
+    return render(request, 'wiki/search.html', {'query': query, 'results': results,
+                                                'query_corta': 0 < len(query) < MIN_Q})
 
 
 def search_api(request):

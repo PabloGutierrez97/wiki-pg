@@ -22,7 +22,10 @@
     </form>
 </header>
 
-{% if query %}
+<div id="resultados" aria-live="polite">
+{% if query_corta %}
+    <p class="result-count">Escribe al menos 2 letras.</p>
+{% elif query %}
     {% if results %}
     <p class="result-count" role="status">{{ results|length }} resultado{{ results|length|pluralize }} para «{{ query }}»</p>
     <ol class="entry-list">
@@ -35,4 +38,5 @@
     </div>
     {% endif %}
 {% endif %}
+</div>
 {% endblock %}

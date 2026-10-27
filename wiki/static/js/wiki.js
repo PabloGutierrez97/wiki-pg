@@ -117,6 +117,33 @@
         document.addEventListener('click', function (e) { if (!form.contains(e.target)) close(); });
     });
 
+    /* ---------- Página de búsqueda: resultados mientras escribes ---------- */
+    var pagina = document.querySelector('.search-page-input');
+    var zona = document.getElementById('resultados');
+    if (pagina && zona) {
+        var esperaPagina = null, ultimaPagina = pagina.value.trim();
+        pagina.addEventListener('input', function () {
+            var q = pagina.value.trim();
+            clearTimeout(esperaPagina);
+            if (q === ultimaPagina) return;
+            esperaPagina = setTimeout(function () {
+                ultimaPagina = q;
+                var url = '/search/' + (q ? '?q=' + encodeURIComponent(q) : '');
+                fetch(url, { headers: { 'X-Requested-With': 'fetch' } })
+                    .then(function (r) { return r.ok ? r.text() : null; })
+                    .then(function (html) {
+                        if (html === null || q !== ultimaPagina) return;
+                        var nueva = new DOMParser().parseFromString(html, 'text/html').getElementById('resultados');
+                        if (!nueva) return;
+                        zona.innerHTML = nueva.innerHTML;
+                        history.replaceState(null, '', url);
+                        document.title = q ? '«' + q + '» - Buscar - Wiki PG' : 'Buscar - Wiki PG';
+                    })
+                    .catch(function () {});
+            }, 300);
+        });
+    }
+
     /* «/» enfoca el buscador visible, como en muchas herramientas de terminal */
     document.addEventListener('keydown', function (e) {
         if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;

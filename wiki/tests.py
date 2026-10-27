@@ -182,11 +182,20 @@ class SeguridadTests(TestCase):
 
     # ---------------------------------------------------------- busqueda --
 
+    def test_busqueda_primero_por_titulo_y_aviso_si_es_corta(self):
+        Article.objects.create(title='Otra cosa', slug='otra', category=self.article.category, author=self.user,
+                               is_published=True, content='habla de wireguard de pasada')
+        r = self.client.get('/search/', {'q': 'wireguard'}, HTTP_X_REAL_IP='192.0.2.40')
+        self.assertEqual([a.slug for a in r.context['results']], ['vpn-wireguard', 'otra'])
+        self.assertContains(r, 'id="resultados"')
+        self.assertContains(self.client.get('/search/', {'q': 'w'}, HTTP_X_REAL_IP='192.0.2.40'), 'al menos 2 letras')
+
     def test_busqueda_acotada_y_con_limite_por_visitante(self):
         r = self.client.get('/search/', {'q': 'w' * 500}, HTTP_X_REAL_IP='192.0.2.1')
         self.assertEqual(r.status_code, 200)
         self.assertEqual(len(r.context['query']), 100)
-        for _ in range(29):
+        from .views import busqueda
+        for _ in range(busqueda.BUSQUEDAS_POR_MINUTO - 1):
             self.client.get('/search/', {'q': 'wireguard'}, HTTP_X_REAL_IP='192.0.2.1')
         r = self.client.get('/search/', {'q': 'wireguard'}, HTTP_X_REAL_IP='192.0.2.1')
         self.assertEqual(r.status_code, 429)
