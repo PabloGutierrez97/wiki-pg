@@ -3,6 +3,7 @@
 {% block title %}Wiki PG: apuntes de sistemas de Pablo Gutiérrez{% endblock %}
 
 {% block content %}
+<div class="home-top{% if comando %} has-cmd{% endif %}">
 <section class="home-hero">
     <h1 class="page-title">Apuntes de sistemas</h1>
     <p class="page-lede">Lo que voy aprendiendo con Linux, Windows Server, redes, virtualización y automatización, escrito para no tener que volver a buscarlo. {{ total_articles }} artículo{{ total_articles|pluralize }} y contando.</p>
@@ -24,6 +25,29 @@
     </p>
     {% endif %}
 </section>
+
+{% if comando %}
+<section class="cmd-card" aria-labelledby="cmd-titulo" data-cmd-card data-lang="{{ comando.lang }}">
+    <header class="cmd-head">
+        <span class="terminal-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+        <h2 id="cmd-titulo">Comando del día</h2>
+        <span class="cmd-lang" data-cmd-lang>{{ comando.lang }}</span>
+    </header>
+    <div class="cmd-body">
+        <pre><span class="cmd-prompt" data-cmd-prompt>{{ comando.prompt }}</span> <code data-cmd-text>{{ comando.cmd }}</code><span class="cmd-cursor" aria-hidden="true"></span></pre>
+    </div>
+    <footer class="cmd-foot">
+        <p class="cmd-src">Sale de <a href="{{ comando.url }}" data-cmd-link>{{ comando.titulo }}</a></p>
+        <div class="cmd-actions">
+            <button type="button" class="cmd-btn" data-cmd-copy><i class="fa-regular fa-copy" aria-hidden="true"></i><span>Copiar</span></button>
+            {% if comandos|length > 1 %}<button type="button" class="cmd-btn" data-cmd-next><i class="fa-solid fa-shuffle" aria-hidden="true"></i><span>Otro comando</span></button>{% endif %}
+        </div>
+    </footer>
+    <p class="visually-hidden" role="status" data-cmd-status></p>
+</section>
+{{ comandos|json_script:"cmd-data" }}
+{% endif %}
+</div>
 
 <div class="home-grid">
     <section aria-labelledby="recientes">
@@ -70,6 +94,15 @@
         </ul>
         {% else %}
         <div class="empty"><p>Aún no hay categorías. Créalas desde el panel de administración.</p></div>
+        {% endif %}
+
+        {% if etiquetas %}
+        <h2 class="section-title section-title-sub" id="etiquetas">Etiquetas más usadas</h2>
+        <ul class="tag-cloud" aria-labelledby="etiquetas">
+            {% for tag, n in etiquetas %}
+            <li><a href="{% url 'wiki:tag_detail' tag %}"><span class="hash" aria-hidden="true">#</span>{{ tag }}<span class="count">{{ n }}</span></a></li>
+            {% endfor %}
+        </ul>
         {% endif %}
     </section>
 </div>

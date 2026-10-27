@@ -33,7 +33,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;600&family=Atkinson+Hyperlegible+Next:ital,wght@0,400;0,700;1,400&display=swap">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-    <link rel="stylesheet" href="{% static 'css/wiki.css' %}?v=4">
+    <link rel="stylesheet" href="{% static 'css/wiki.css' %}?v=5">
     <link rel="stylesheet" href="{% static 'css/pygments.css' %}?v=2">
     <link rel="stylesheet" href="{% static 'css/terminal.css' %}?v=2">
     {% block extra_head %}{% endblock %}
@@ -126,7 +126,7 @@
         <a href="{% url 'wiki:about' %}">Sobre mí</a>
     </footer>
 
-    <script src="{% static 'js/wiki.js' %}?v=2" defer></script>
+    <script src="{% static 'js/wiki.js' %}?v=3" defer></script>
     {% block extra_body %}{% endblock %}
     {% include 'wiki/_terminal_widget.html' %}
 </body>

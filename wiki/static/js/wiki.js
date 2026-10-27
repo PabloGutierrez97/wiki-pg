@@ -242,4 +242,97 @@
             }
         }
     }
+    /* ---------- Portada: comando del día ---------- */
+    var cmdCard = document.querySelector('[data-cmd-card]');
+    var cmdData = document.getElementById('cmd-data');
+    if (cmdCard && cmdData) {
+        var lista = [];
+        try { lista = JSON.parse(cmdData.textContent) || []; } catch (e) {}
+        var elTexto = cmdCard.querySelector('[data-cmd-text]');
+        var elPrompt = cmdCard.querySelector('[data-cmd-prompt]');
+        var elLang = cmdCard.querySelector('[data-cmd-lang]');
+        var elLink = cmdCard.querySelector('[data-cmd-link]');
+        var elStatus = cmdCard.querySelector('[data-cmd-status]');
+        var btnCopy = cmdCard.querySelector('[data-cmd-copy]');
+        var btnNext = cmdCard.querySelector('[data-cmd-next]');
+        var quieto = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        var actual = 0, tecleo = null;
+
+        // Lo que falta por teclear ocupa su sitio de forma invisible: la tarjeta
+        // no cambia de alto mientras se escribe y la página no salta.
+        var cursor = cmdCard.querySelector('.cmd-cursor');
+        var escrito = document.createElement('span');
+        var resto = document.createElement('span');
+        resto.className = 'cmd-ghost';
+        resto.setAttribute('aria-hidden', 'true');
+        var escribir = function (texto, ms) {
+            clearInterval(tecleo);
+            elTexto.textContent = '';
+            if (quieto) { elTexto.textContent = texto; return; }
+            elTexto.appendChild(escrito);
+            if (cursor) elTexto.appendChild(cursor);
+            elTexto.appendChild(resto);
+            var i = 0;
+            var paso = function () {
+                escrito.textContent = texto.slice(0, i);
+                resto.textContent = texto.slice(i);
+                if (i >= texto.length) {
+                    clearInterval(tecleo);
+                    elTexto.textContent = texto;
+                    if (cursor) elTexto.parentNode.appendChild(cursor);
+                }
+                i += 1;
+            };
+            paso();
+            tecleo = setInterval(paso, ms);
+        };
+        var mostrar = function (n, ms) {
+            var c = lista[n];
+            if (!c) return;
+            actual = n;
+            cmdCard.setAttribute('data-lang', c.lang);
+            elPrompt.textContent = c.prompt;
+            elLang.textContent = c.lang;
+            elLink.textContent = c.titulo;
+            elLink.setAttribute('href', c.url);
+            escribir(c.cmd, ms);
+        };
+
+        // Una sola animación al cargar: el comando del día se «teclea».
+        if (lista.length && !quieto) escribir(lista[0].cmd, 32);
+
+        if (btnNext) btnNext.addEventListener('click', function () {
+            mostrar((actual + 1) % lista.length, 14);
+            if (elStatus) elStatus.textContent = 'Comando de «' + lista[actual].titulo + '»';
+        });
+        if (btnCopy) btnCopy.addEventListener('click', function () {
+            var texto = lista[actual] ? lista[actual].cmd : elTexto.textContent;
+            var label = btnCopy.querySelector('span');
+            var icon = btnCopy.querySelector('i');
+            var hecho = function () {
+                clearInterval(tecleo);
+                elTexto.textContent = texto;
+                var cur = cmdCard.querySelector('.cmd-cursor');
+                if (cur && cur.parentNode === elTexto) elTexto.parentNode.appendChild(cur);
+                label.textContent = 'Copiado';
+                icon.className = 'fa-solid fa-check';
+                btnCopy.classList.add('is-done');
+                if (elStatus) elStatus.textContent = 'Comando copiado';
+                setTimeout(function () {
+                    label.textContent = 'Copiar';
+                    icon.className = 'fa-regular fa-copy';
+                    btnCopy.classList.remove('is-done');
+                }, 1800);
+            };
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(texto).then(hecho);
+            } else {
+                var ta = document.createElement('textarea');
+                ta.value = texto; ta.style.position = 'fixed'; ta.style.opacity = '0';
+                document.body.appendChild(ta); ta.select();
+                try { document.execCommand('copy'); hecho(); } catch (e) {}
+                ta.remove();
+            }
+        });
+    }
 })();

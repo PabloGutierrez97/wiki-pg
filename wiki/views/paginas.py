@@ -6,6 +6,7 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 
+from ..destacados import comandos_del_dia, etiquetas_frecuentes, version_publicados
 from ..models import Article, Category, Profile
 from ..rendering import articulo_html, descripcion, resumen
 from ..security import client_ip_cuota, excede_limite
@@ -17,7 +18,12 @@ ETIQUETAS_POR_MINUTO = 30
 
 def home(request):
     publicados = Article.objects.publicados()
+    version = version_publicados()
+    comandos = comandos_del_dia(version)
     return render(request, 'wiki/home.html', {
+        'comando': comandos[0] if comandos else None,
+        'comandos': comandos,
+        'etiquetas': etiquetas_frecuentes(version),
         'categories': get_categories(),
         'recent_articles': publicados.select_related('category')[:6],
         'total_articles': publicados.count(),
