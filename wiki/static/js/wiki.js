@@ -335,4 +335,26 @@
             }
         });
     }
+    /* ---------- Sobre mí: «ejecutar» neofetch una vez al cargar ---------- */
+    var nf = document.querySelector('[data-nf]');
+    if (nf && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        var orden = nf.querySelector('[data-nf-cmd]');
+        var textoOrden = orden.textContent;
+        var n = 0;
+        nf.classList.add('is-booting');
+        orden.textContent = '';
+        setTimeout(function () {
+            var t = setInterval(function () {
+                n += 1;
+                orden.textContent = textoOrden.slice(0, n);
+                if (n >= textoOrden.length) {
+                    clearInterval(t);
+                    setTimeout(function () {
+                        nf.classList.remove('is-booting');
+                        nf.classList.add('is-ready');
+                    }, 180);
+                }
+            }, 55);
+        }, 250);
+    }
 })();

@@ -773,3 +773,37 @@ class PortadaTests(TestCase):
         art = self._articulo('a', 'Intro.\n\n## Paso 1\n\n```routeros\n/interface print\n```\n\nFin.')
         self.assertEqual(resumen(art), 'Intro. Fin.')
         self.assertEqual(descripcion(art), 'Intro. Paso 1 Fin.')   # para Google, los títulos sí cuentan
+
+
+@override_settings(CACHES=CACHE_TESTS)
+class SobreMiTests(TestCase):
+    """Página «Sobre mí»: neofetch con datos reales, línea de tiempo y texto libre."""
+
+    def test_linea_de_tiempo_y_texto_libre(self):
+        from .perfil import en_sistemas_desde, linea_de_tiempo, stack_en_listas
+        tl = linea_de_tiempo('2021 – hoy  Responsable de Sistemas | Texco\n2018-2021: Técnico, Consultora IT')
+        self.assertEqual(tl[0], {'periodo': '2021 – hoy', 'actual': True,
+                                 'titulo': 'Responsable de Sistemas', 'detalle': 'Texco'})
+        self.assertEqual((tl[1]['periodo'], tl[1]['titulo'], tl[1]['detalle']),
+                         ('2018 – 2021', 'Técnico', 'Consultora IT'))
+        self.assertIsNone(linea_de_tiempo('Llevo años en sistemas.\n2020 algo'))   # se queda en prosa
+        self.assertEqual(en_sistemas_desde('Desde 2016 hasta 2019 y luego 2021')[0], 2016)
+        self.assertEqual(en_sistemas_desde('sin fechas'), (None, None))
+        self.assertEqual(stack_en_listas({'redes': 'MikroTik, WireGuard'}),
+                         [('Redes', ['MikroTik', 'WireGuard'])])
+
+    def test_pagina_con_y_sin_formato(self):
+        p = Profile.get()
+        p.experiencia = '2019 – hoy  Responsable de Sistemas | Texco'
+        p.formacion = 'Ciclo superior de ASIR'
+        p.certificaciones = 'MTCNA, AZ-900'
+        p.stack = '{"redes": "MikroTik"}'
+        p.save()
+        html = self.client.get(reverse('wiki:about')).content.decode()
+        self.assertIn('<h1 class="nf-name"', html)
+        self.assertIn('class="timeline"', html)
+        self.assertIn('Ciclo superior de ASIR', html)          # formación sin años: texto tal cual
+        self.assertIn('desde 2019', html)
+        self.assertIn('<li>MikroTik</li>', html)
+        self.assertEqual(html.count('fa-certificate'), 2)
+        self.assertIn('id="matrix-rain"', html)                 # el easter egg sigue ahí

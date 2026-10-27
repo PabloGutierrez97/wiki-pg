@@ -6,6 +6,7 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 
+from .. import perfil
 from ..destacados import comandos_del_dia, etiquetas_frecuentes, version_publicados
 from ..models import Article, Category, Profile
 from ..rendering import articulo_html, descripcion, resumen
@@ -118,7 +119,20 @@ def tag_detail(request, tag):
 
 def about(request):
     profile = Profile.get()
+    publicados = Article.objects.publicados()
+    categorias = [c for c in get_categories() if c.total_articles]
+    desde, anios = perfil.en_sistemas_desde(profile.experiencia)
     return render(request, 'wiki/about.html', {
         'profile': profile,
-        'stack': profile.stack_dict(),
+        'stack': perfil.stack_en_listas(profile.stack_dict()),
+        'trayectoria': perfil.linea_de_tiempo(profile.experiencia),
+        'formacion': perfil.linea_de_tiempo(profile.formacion),
+        'certificaciones': perfil.certificaciones(profile.certificaciones),
+        'desde': desde,
+        'anios': anios,
+        'total_articles': publicados.count(),
+        'categorias': categorias,
+        'max_cat': max([c.total_articles for c in categorias], default=1),
+        'last_updated': publicados.order_by('-updated_at').first(),
+        'github_url': getattr(settings, 'GITHUB_URL', ''),
     })

@@ -2,67 +2,134 @@
 {% load wiki_tags %}
 
 {% block title %}Sobre mí - Wiki PG{% endblock %}
-{% block description %}Quién escribe esta wiki: {{ profile.nombre }}, {{ profile.cargo }}.{% endblock %}
+{% block description %}{{ profile.nombre }}, {{ profile.cargo|lower }}{% if profile.empresa %} en {{ profile.empresa }}{% endif %}. Quién escribe esta wiki, con qué trabaja y cómo contactar.{% endblock %}
 
 {% block path %}
 <li><span aria-current="page">sobre-mi</span></li>
 {% endblock %}
 
 {% block content %}
-<header class="page-head">
-    <h1 class="page-title">Sobre mí</h1>
-    <p class="page-lede">Quién escribe esta wiki y con qué trabaja.</p>
-</header>
-
-<section class="terminal" aria-label="Perfil">
-    <div class="terminal-head" aria-hidden="true">
-        <div class="terminal-dots"><span></span><span></span><span></span></div>
-        <span class="terminal-title">pgg@wiki: ~</span><span></span>
+<section class="nf" aria-labelledby="nf-nombre" data-nf>
+    <div class="nf-bar" aria-hidden="true">
+        <span class="terminal-dots"><span></span><span></span><span></span></span>
+        <span class="nf-bar-title">pgg@wiki: ~</span>
     </div>
-    <div class="terminal-body">
-            <div class="cmd"><span class="ps-user">pgg@wiki</span><span class="ps-dim">:</span><span class="ps-path">~</span><span class="ps-dim">$</span> whoami</div>
-            <div class="out">{{ profile.nombre }}</div>
-
-            <div class="cmd"><span class="ps-user">pgg@wiki</span><span class="ps-dim">:</span><span class="ps-path">~</span><span class="ps-dim">$</span> cat role.txt</div>
-            <div class="out">{{ profile.cargo }}{% if profile.empresa %} en {{ profile.empresa }}{% endif %}</div>
-
-            <div class="cmd"><span class="ps-user">pgg@wiki</span><span class="ps-dim">:</span><span class="ps-path">~</span><span class="ps-dim">$</span> cat location.txt</div>
-            <div class="out">{{ profile.ubicacion }}</div>
-
-            <div class="cmd"><span class="ps-user">pgg@wiki</span><span class="ps-dim">:</span><span class="ps-path">~</span><span class="ps-dim">$</span> cat contact.txt</div>
-            <div class="out"><a href="mailto:{{ profile.email }}">{{ profile.email }}</a>{% if profile.linkedin %}
-<a href="{{ profile.linkedin }}" target="_blank" rel="noopener">LinkedIn</a>{% endif %}</div>
-
-            {% if profile.descripcion %}
-            <div class="cmd"><span class="ps-user">pgg@wiki</span><span class="ps-dim">:</span><span class="ps-path">~</span><span class="ps-dim">$</span> cat profile.txt</div>
-            <div class="out prose-out">{{ profile.descripcion }}</div>
-            {% endif %}
-
-            {% if stack %}
-            <div class="cmd"><span class="ps-user">pgg@wiki</span><span class="ps-dim">:</span><span class="ps-path">~</span><span class="ps-dim">$</span> cat stack.json</div>
-            <div class="out">{% for key, value in stack.items %}<span class="key">{{ key }}</span>: {{ value }}{% if not forloop.last %}
-{% endif %}{% endfor %}</div>
-            {% endif %}
-
-            {% if profile.experiencia %}
-            <div class="cmd"><span class="ps-user">pgg@wiki</span><span class="ps-dim">:</span><span class="ps-path">~</span><span class="ps-dim">$</span> cat experience.log</div>
-            <div class="out prose-out">{{ profile.experiencia }}</div>
-            {% endif %}
-
-            {% if profile.formacion %}
-            <div class="cmd"><span class="ps-user">pgg@wiki</span><span class="ps-dim">:</span><span class="ps-path">~</span><span class="ps-dim">$</span> ls education/</div>
-            <div class="out prose-out">{{ profile.formacion }}</div>
-            {% endif %}
-
-            {% if profile.certificaciones %}
-            <div class="cmd"><span class="ps-user">pgg@wiki</span><span class="ps-dim">:</span><span class="ps-path">~</span><span class="ps-dim">$</span> ls certifications/</div>
-            <div class="out">{% for cert in profile.certificaciones|split:"," %}{{ cert|trim }}{% if not forloop.last %}
-{% endif %}{% endfor %}</div>
-            {% endif %}
-
-            <div class="cmd"><span class="ps-user">pgg@wiki</span><span class="ps-dim">:</span><span class="ps-path">~</span><span class="ps-dim">$</span> <span class="cursor" aria-hidden="true"></span></div>
+    <div class="nf-body">
+        <p class="nf-cmd" aria-hidden="true"><span class="ps-user">pgg@wiki</span><span class="ps-dim">:</span><span class="ps-path">~</span><span class="ps-dim">$</span> <span data-nf-cmd>neofetch</span><span class="nf-caret" data-nf-caret></span></p>
+        <div class="nf-out" data-nf-out>
+            <svg class="nf-logo" viewBox="0 0 108.5 68.5" aria-hidden="true" focusable="false"><rect x="0" y="0" width="8.5" height="8.5" rx="1.2"/><rect x="10" y="0" width="8.5" height="8.5" rx="1.2"/><rect x="20" y="0" width="8.5" height="8.5" rx="1.2"/><rect x="30" y="0" width="8.5" height="8.5" rx="1.2"/><rect x="70" y="0" width="8.5" height="8.5" rx="1.2"/><rect x="80" y="0" width="8.5" height="8.5" rx="1.2"/><rect x="90" y="0" width="8.5" height="8.5" rx="1.2"/><rect x="0" y="10" width="8.5" height="8.5" rx="1.2"/><rect x="40" y="10" width="8.5" height="8.5" rx="1.2"/><rect x="60" y="10" width="8.5" height="8.5" rx="1.2"/><rect x="100" y="10" width="8.5" height="8.5" rx="1.2"/><rect x="0" y="20" width="8.5" height="8.5" rx="1.2"/><rect x="40" y="20" width="8.5" height="8.5" rx="1.2"/><rect x="60" y="20" width="8.5" height="8.5" rx="1.2"/><rect x="0" y="30" width="8.5" height="8.5" rx="1.2"/><rect x="10" y="30" width="8.5" height="8.5" rx="1.2"/><rect x="20" y="30" width="8.5" height="8.5" rx="1.2"/><rect x="30" y="30" width="8.5" height="8.5" rx="1.2"/><rect x="60" y="30" width="8.5" height="8.5" rx="1.2"/><rect x="80" y="30" width="8.5" height="8.5" rx="1.2"/><rect x="90" y="30" width="8.5" height="8.5" rx="1.2"/><rect x="100" y="30" width="8.5" height="8.5" rx="1.2"/><rect x="0" y="40" width="8.5" height="8.5" rx="1.2"/><rect x="60" y="40" width="8.5" height="8.5" rx="1.2"/><rect x="100" y="40" width="8.5" height="8.5" rx="1.2"/><rect x="0" y="50" width="8.5" height="8.5" rx="1.2"/><rect x="60" y="50" width="8.5" height="8.5" rx="1.2"/><rect x="100" y="50" width="8.5" height="8.5" rx="1.2"/><rect x="0" y="60" width="8.5" height="8.5" rx="1.2"/><rect x="70" y="60" width="8.5" height="8.5" rx="1.2"/><rect x="80" y="60" width="8.5" height="8.5" rx="1.2"/><rect x="90" y="60" width="8.5" height="8.5" rx="1.2"/></svg>
+            <div class="nf-info">
+                <h1 class="nf-name" id="nf-nombre">{{ profile.nombre }}</h1>
+                <p class="nf-sep" aria-hidden="true">{% for c in profile.nombre %}-{% endfor %}</p>
+                <dl>
+                    {% if profile.cargo %}<div><dt>Rol</dt><dd>{{ profile.cargo }}</dd></div>{% endif %}
+                    {% if profile.empresa %}<div><dt>Empresa</dt><dd>{{ profile.empresa }}</dd></div>{% endif %}
+                    {% if profile.ubicacion %}<div><dt>Ubicación</dt><dd>{{ profile.ubicacion }}</dd></div>{% endif %}
+                    {% if desde %}<div><dt>En sistemas</dt><dd>desde {{ desde }}{% if anios %} ({{ anios }} año{{ anios|pluralize }}){% endif %}</dd></div>{% endif %}
+                    <div><dt>Esta wiki</dt><dd>{{ total_articles }} artículo{{ total_articles|pluralize }} en {{ categorias|length }} categoría{{ categorias|length|pluralize }}</dd></div>
+                    {% if last_updated %}<div><dt>Última edición</dt><dd><time datetime="{{ last_updated.updated_at|date:'c' }}">{{ last_updated.updated_at|date:"d/m/Y" }}</time></dd></div>{% endif %}
+                    {% if profile.email %}<div><dt>Correo</dt><dd><a href="mailto:{{ profile.email }}">{{ profile.email }}</a></dd></div>{% endif %}
+                </dl>
+                <div class="nf-colors" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+            </div>
+        </div>
     </div>
 </section>
+
+<div class="about-grid">
+    <div class="about-main">
+        {% if profile.descripcion %}
+        <section class="about-sec sec-quien" aria-labelledby="quien">
+            <h2 class="section-title" id="quien">Quién soy</h2>
+            <div class="about-prose">{{ profile.descripcion|linebreaks }}</div>
+        </section>
+        {% endif %}
+
+        {% if profile.experiencia %}
+        <section class="about-sec sec-trayectoria" aria-labelledby="trayectoria">
+            <h2 class="section-title" id="trayectoria">Trayectoria</h2>
+            {% if trayectoria %}
+            <ol class="timeline">
+                {% for e in trayectoria %}
+                <li class="{% if e.actual %}is-actual{% endif %}">
+                    <span class="tl-periodo">{{ e.periodo }}</span>
+                    <span class="tl-titulo">{{ e.titulo }}</span>
+                    {% if e.detalle %}<span class="tl-detalle">{{ e.detalle }}</span>{% endif %}
+                </li>
+                {% endfor %}
+            </ol>
+            {% else %}
+            <div class="about-prose">{{ profile.experiencia|linebreaks }}</div>
+            {% endif %}
+        </section>
+        {% endif %}
+
+        {% if stack %}
+        <section class="about-sec sec-stack" aria-labelledby="stack">
+            <h2 class="section-title" id="stack">Con qué trabajo</h2>
+            <dl class="stack">
+                {% for area, items in stack %}
+                <div>
+                    <dt>{{ area }}</dt>
+                    <dd><ul>{% for it in items %}<li>{{ it }}</li>{% endfor %}</ul></dd>
+                </div>
+                {% endfor %}
+            </dl>
+        </section>
+        {% endif %}
+    </div>
+
+    <aside class="about-side" aria-label="Contacto y formación">
+        <section class="about-sec about-contact sec-contacto" aria-labelledby="contacto">
+            <h2 class="section-title" id="contacto">Contacto</h2>
+            <ul class="contact-list">
+                {% if profile.email %}<li><a href="mailto:{{ profile.email }}"><i class="fa-regular fa-envelope" aria-hidden="true"></i><span>Escribirme un correo</span></a></li>{% endif %}
+                {% if profile.linkedin %}<li><a href="{{ profile.linkedin }}" target="_blank" rel="noopener"><i class="fa-brands fa-linkedin" aria-hidden="true"></i><span>LinkedIn</span></a></li>{% endif %}
+                {% if github_url %}<li><a href="{{ github_url }}" target="_blank" rel="noopener"><i class="fa-brands fa-github" aria-hidden="true"></i><span>GitHub</span></a></li>{% endif %}
+            </ul>
+            <p class="contact-hint">También puedes abrir el terminal <span class="kbd-inline">&gt;_</span> y escribir <code>contact</code>.</p>
+        </section>
+
+        {% if profile.formacion %}
+        <section class="about-sec" aria-labelledby="formacion">
+            <h2 class="section-title" id="formacion">Formación</h2>
+            {% if formacion %}
+            <ol class="timeline timeline-sm">
+                {% for e in formacion %}
+                <li><span class="tl-periodo">{{ e.periodo }}</span><span class="tl-titulo">{{ e.titulo }}</span>{% if e.detalle %}<span class="tl-detalle">{{ e.detalle }}</span>{% endif %}</li>
+                {% endfor %}
+            </ol>
+            {% else %}
+            <div class="about-prose about-prose-sm">{{ profile.formacion|linebreaks }}</div>
+            {% endif %}
+        </section>
+        {% endif %}
+
+        {% if certificaciones %}
+        <section class="about-sec" aria-labelledby="certs">
+            <h2 class="section-title" id="certs">Certificaciones</h2>
+            <ul class="cert-list">
+                {% for c in certificaciones %}<li><i class="fa-solid fa-certificate" aria-hidden="true"></i>{{ c }}</li>{% endfor %}
+            </ul>
+        </section>
+        {% endif %}
+
+        {% if categorias %}
+        <section class="about-sec" aria-labelledby="escribo">
+            <h2 class="section-title" id="escribo">De qué escribo</h2>
+            <ul class="topic-bars">
+                {% for c in categorias %}
+                <li>
+                    <a href="{% url 'wiki:category_detail' c.slug %}">{{ c.name }}</a>
+                    <span class="bar" aria-hidden="true"><span style="width: {% widthratio c.total_articles max_cat 100 %}%"></span></span>
+                    <span class="n">{{ c.total_articles }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </section>
+        {% endif %}
+    </aside>
+</div>
 {% endblock %}
 
 {% block extra_body %}
