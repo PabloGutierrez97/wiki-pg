@@ -24,7 +24,7 @@ def _cuerpo_generar(pregunta, system, stream, opciones=None):
         "prompt": pregunta,
         "system": system,
         "stream": stream,
-        "keep_alive": "30m",
+        "keep_alive": -1,
         "options": dict(OPCIONES, **(opciones or {})),
     }
 
